@@ -2,7 +2,7 @@ import { Picker } from "@react-native-picker/picker";
 import * as DocumentPicker from "expo-document-picker";
 import React, { useState, useEffect, useRef } from "react";
 import * as Location from "expo-location";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Step3 from "./Step3";
@@ -81,6 +81,12 @@ export default function OwnerRegistrationScreen() {
   const [mapRegion, setMapRegion] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const geocodeTimerRef = useRef(null);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [selectedPlaceName, setSelectedPlaceName] = useState("");
+
+  useEffect(() => {
+    setSelectedFacilities([]);
+  }, [form.stayType]);
 
   useEffect(() => {
     (async () => {
@@ -97,13 +103,15 @@ export default function OwnerRegistrationScreen() {
     const input = form.location.trim();
     if (!input) {
       setMapRegion(null);
+      setLocationSuggestions([]);
+      setSelectedPlaceName("");
       return;
     }
     geocodeTimerRef.current = setTimeout(async () => {
       try {
         const timeoutMs = 6000;
         if (Platform.OS === "android") {
-          const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}`;
+          const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=${encodeURIComponent(input)}`;
           const fetchPromise = fetch(url, { headers: { Accept: "application/json" } }).then(r => r.json());
           const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Geocode timeout")), timeoutMs));
           const items = await Promise.race([fetchPromise, timeoutPromise]);
@@ -121,8 +129,10 @@ export default function OwnerRegistrationScreen() {
             } else {
               setMapRegion(null);
             }
+            setLocationSuggestions(items);
           } else {
             setMapRegion(null);
+            setLocationSuggestions([]);
           }
         } else {
           if (locationPermission !== "granted") return;
@@ -140,9 +150,11 @@ export default function OwnerRegistrationScreen() {
           } else {
             setMapRegion(null);
           }
+          setLocationSuggestions([]);
         }
       } catch (_err) {
         setMapRegion(null);
+        setLocationSuggestions([]);
       }
     }, 600);
     return () => {
@@ -945,12 +957,85 @@ export default function OwnerRegistrationScreen() {
                             {errors.location}
                           </Text>
                         ) : null}
+                        {Platform.OS === "android" && locationSuggestions.length > 0 && (
+                          <View style={{ marginBottom: 10 }}>
+                            {locationSuggestions.slice(0, 5).map((item, idx) => (
+                              <TouchableOpacity
+                                key={`${item.place_id || idx}`}
+                                style={styles.suggestionItem}
+                                onPress={() => {
+                                  const lat = parseFloat(item.lat);
+                                  const lon = parseFloat(item.lon);
+                                  if (isFinite(lat) && isFinite(lon)) {
+                                    setMapRegion({
+                                      latitude: lat,
+                                      longitude: lon,
+                                      latitudeDelta: 0.0922,
+                                      longitudeDelta: 0.0421,
+                                    });
+                                  }
+                                  if (item.display_name) {
+                                    setSelectedPlaceName(item.display_name);
+                                  }
+                                }}
+                              >
+                                <Text style={styles.suggestionText} numberOfLines={1}>
+                                  {item.display_name}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
 
                         {mapRegion && (
-                          <MapView style={styles.map} region={mapRegion}>
+                          <MapView provider={PROVIDER_GOOGLE} style={styles.map} region={mapRegion}>
                             <Marker coordinate={mapRegion} />
                           </MapView>
                         )}
+                        {mapRegion && (
+                          <View style={{ flexDirection: "row", marginTop: 8, marginBottom: 10 }}>
+                            <TouchableOpacity
+                              style={styles.mapActionBtn}
+                              onPress={async () => {
+                                try {
+                                  const { status } = await Location.requestForegroundPermissionsAsync();
+                                  if (status !== "granted") return;
+                                  const pos = await Location.getCurrentPositionAsync({});
+                                  if (pos?.coords) {
+                                    setMapRegion({
+                                      latitude: pos.coords.latitude,
+                                      longitude: pos.coords.longitude,
+                                      latitudeDelta: 0.0922,
+                                      longitudeDelta: 0.0421,
+                                    });
+                                    setSelectedPlaceName("Current location");
+                                  }
+                                } catch {}
+                              }}
+                            >
+                              <Text style={styles.mapActionText}>Use Current Location</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.mapActionBtn, { marginLeft: 8 }]}
+                              onPress={() => {
+                                if (form.location.trim()) {
+                                  Linking.openURL(
+                                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                      form.location.trim()
+                                    )}`
+                                  );
+                                }
+                              }}
+                            >
+                              <Text style={styles.mapActionText}>Open in Maps</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        {selectedPlaceName ? (
+                          <Text style={{ color: "#374151", fontSize: 12, marginBottom: 6 }} numberOfLines={1}>
+                            Selected: {selectedPlaceName}
+                          </Text>
+                        ) : null}
 
                         <Text style={styles.label}>Hostel Type</Text>
                         <Picker
@@ -1049,7 +1134,7 @@ export default function OwnerRegistrationScreen() {
                             marginBottom: 10,
                           }}
                         >
-                          {["Water", "Parking", "Lift", "AC", "Non AC"].map(
+                          {["WiFi", "Mess", "Laundry", "Security", "Parking"].map(
                             (label) => {
                               const isSelected = selectedFacilities.includes(label);
                               return (
@@ -1153,12 +1238,85 @@ export default function OwnerRegistrationScreen() {
                             {errors.location}
                           </Text>
                         ) : null}
+                        {Platform.OS === "android" && locationSuggestions.length > 0 && (
+                          <View style={{ marginBottom: 10 }}>
+                            {locationSuggestions.slice(0, 5).map((item, idx) => (
+                              <TouchableOpacity
+                                key={`${item.place_id || idx}`}
+                                style={styles.suggestionItem}
+                                onPress={() => {
+                                  const lat = parseFloat(item.lat);
+                                  const lon = parseFloat(item.lon);
+                                  if (isFinite(lat) && isFinite(lon)) {
+                                    setMapRegion({
+                                      latitude: lat,
+                                      longitude: lon,
+                                      latitudeDelta: 0.0922,
+                                      longitudeDelta: 0.0421,
+                                    });
+                                  }
+                                  if (item.display_name) {
+                                    setSelectedPlaceName(item.display_name);
+                                  }
+                                }}
+                              >
+                                <Text style={styles.suggestionText} numberOfLines={1}>
+                                  {item.display_name}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
 
                         {mapRegion && (
-                          <MapView style={styles.map} region={mapRegion}>
+                          <MapView provider={PROVIDER_GOOGLE} style={styles.map} region={mapRegion}>
                             <Marker coordinate={mapRegion} />
                           </MapView>
                         )}
+                        {mapRegion && (
+                          <View style={{ flexDirection: "row", marginTop: 8, marginBottom: 10 }}>
+                            <TouchableOpacity
+                              style={styles.mapActionBtn}
+                              onPress={async () => {
+                                try {
+                                  const { status } = await Location.requestForegroundPermissionsAsync();
+                                  if (status !== "granted") return;
+                                  const pos = await Location.getCurrentPositionAsync({});
+                                  if (pos?.coords) {
+                                    setMapRegion({
+                                      latitude: pos.coords.latitude,
+                                      longitude: pos.coords.longitude,
+                                      latitudeDelta: 0.0922,
+                                      longitudeDelta: 0.0421,
+                                    });
+                                    setSelectedPlaceName("Current location");
+                                  }
+                                } catch {}
+                              }}
+                            >
+                              <Text style={styles.mapActionText}>Use Current Location</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.mapActionBtn, { marginLeft: 8 }]}
+                              onPress={() => {
+                                if (form.location.trim()) {
+                                  Linking.openURL(
+                                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                      form.location.trim()
+                                    )}`
+                                  );
+                                }
+                              }}
+                            >
+                              <Text style={styles.mapActionText}>Open in Maps</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        {selectedPlaceName ? (
+                          <Text style={{ color: "#374151", fontSize: 12, marginBottom: 6 }} numberOfLines={1}>
+                            Selected: {selectedPlaceName}
+                          </Text>
+                        ) : null}
 
                         <Text style={styles.label}>BHK</Text>
                         <Picker
@@ -1280,7 +1438,7 @@ export default function OwnerRegistrationScreen() {
                             marginBottom: 10,
                           }}
                         >
-                          {["Water", "Parking", "Lift", "AC", "Non AC"].map(
+                          {["Parking", "Lift", "Power Backup", "Security", "Play Area"].map(
                             (label) => {
                               const isSelected = selectedFacilities.includes(label);
                               return (
@@ -1383,12 +1541,85 @@ export default function OwnerRegistrationScreen() {
                             {errors.location}
                           </Text>
                         ) : null}
+                        {Platform.OS === "android" && locationSuggestions.length > 0 && (
+                          <View style={{ marginBottom: 10 }}>
+                            {locationSuggestions.slice(0, 5).map((item, idx) => (
+                              <TouchableOpacity
+                                key={`${item.place_id || idx}`}
+                                style={styles.suggestionItem}
+                                onPress={() => {
+                                  const lat = parseFloat(item.lat);
+                                  const lon = parseFloat(item.lon);
+                                  if (isFinite(lat) && isFinite(lon)) {
+                                    setMapRegion({
+                                      latitude: lat,
+                                      longitude: lon,
+                                      latitudeDelta: 0.0922,
+                                      longitudeDelta: 0.0421,
+                                    });
+                                  }
+                                  if (item.display_name) {
+                                    setSelectedPlaceName(item.display_name);
+                                  }
+                                }}
+                              >
+                                <Text style={styles.suggestionText} numberOfLines={1}>
+                                  {item.display_name}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
 
                         {mapRegion && (
-                          <MapView style={styles.map} region={mapRegion}>
+                          <MapView provider={PROVIDER_GOOGLE} style={styles.map} region={mapRegion}>
                             <Marker coordinate={mapRegion} />
                           </MapView>
                         )}
+                        {mapRegion && (
+                          <View style={{ flexDirection: "row", marginTop: 8, marginBottom: 10 }}>
+                            <TouchableOpacity
+                              style={styles.mapActionBtn}
+                              onPress={async () => {
+                                try {
+                                  const { status } = await Location.requestForegroundPermissionsAsync();
+                                  if (status !== "granted") return;
+                                  const pos = await Location.getCurrentPositionAsync({});
+                                  if (pos?.coords) {
+                                    setMapRegion({
+                                      latitude: pos.coords.latitude,
+                                      longitude: pos.coords.longitude,
+                                      latitudeDelta: 0.0922,
+                                      longitudeDelta: 0.0421,
+                                    });
+                                    setSelectedPlaceName("Current location");
+                                  }
+                                } catch {}
+                              }}
+                            >
+                              <Text style={styles.mapActionText}>Use Current Location</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.mapActionBtn, { marginLeft: 8 }]}
+                              onPress={() => {
+                                if (form.location.trim()) {
+                                  Linking.openURL(
+                                    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                      form.location.trim()
+                                    )}`
+                                  );
+                                }
+                              }}
+                            >
+                              <Text style={styles.mapActionText}>Open in Maps</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        {selectedPlaceName ? (
+                          <Text style={{ color: "#374151", fontSize: 12, marginBottom: 6 }} numberOfLines={1}>
+                            Selected: {selectedPlaceName}
+                          </Text>
+                        ) : null}
 
                         
 
@@ -1486,7 +1717,7 @@ export default function OwnerRegistrationScreen() {
                             marginBottom: 10,
                           }}
                         >
-                          {["Water", "Parking", "Lift", "AC", "Non AC"].map(
+                          {["Water", "Parking", "Lift", "AC", "Non AC", "Power Backup"].map(
                             (label) => {
                               const isSelected = selectedFacilities.includes(label);
                               return (
@@ -2014,6 +2245,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#22C55E22",
     borderWidth: 1,
     borderColor: "#22C55E"
+  },
+  mapActionBtn: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  mapActionText: {
+    color: "#111827",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  suggestionItem: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  suggestionText: {
+    color: "#374151",
+    fontSize: 14,
   },
   map: {
     height: 200,

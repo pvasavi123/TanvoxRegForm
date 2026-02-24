@@ -1,5 +1,6 @@
 import React from "react";
-import { SafeAreaView, StatusBar } from "react-native";
+import { StatusBar } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import OwnerRegistrationScreen from "../../src/screens/OwnerRegistrationScreen";
 
 export default function App() {
