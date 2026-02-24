@@ -269,8 +269,154 @@ export default function Step3({ form }) {
         
       </ScrollView>
 
-      {/* BUILDING CONFIG MODAL */}
-      {/* Hostel modal and rooms overlay removed due to conflicts */}
+      <Modal visible={buildingOpen} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <Animated.View style={[styles.modalBox, { transform: [{ translateY: slideAnim }] }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.sectionTitle}>{selectionMode ? `${selectedFloors.length} Selected` : "Select a Floor"}</Text>
+              {selectionMode && (
+                <TouchableOpacity onPress={() => {setSelectionMode(false); setSelectedFloors([]);}}>
+                    <Text style={{color: '#EF4444', fontWeight: 'bold'}}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView contentContainerStyle={styles.gridContainer}>
+              {floors.map((floor, index) => (
+                <TouchableOpacity 
+                  key={index} 
+                  style={[styles.card, selectedFloors.includes(index) && styles.selectedCard]} 
+                  onLongPress={() => handleLongPress(index)} 
+                  onPress={() => handlePress(index)}
+                >
+                  {selectionMode && (
+                    <View style={[styles.checkCircle, selectedFloors.includes(index) && styles.checkCircleActive]}>
+                      {selectedFloors.includes(index) && <Ionicons name="checkmark" size={12} color="white" />}
+                    </View>
+                  )}
+                  <Text style={[styles.cardTitle, selectedFloors.includes(index) && {color: '#2F80ED'}]}>Floor {floor.floorNo}</Text>
+                  <Text style={styles.cardSub}>{floor.rooms.length} Rooms</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {selectionMode ? (
+              <View style={styles.selectionFooter}>
+                <TouchableOpacity style={styles.smallActionBtn} onPress={() => setSelectedFloors(floors.map((_, i) => i))}><Text style={styles.smallBtnText}>All</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.smallActionBtn, {backgroundColor: '#FEE2E2'}]} onPress={deleteSelectedFloors}><Text style={[styles.smallBtnText, {color: '#EF4444'}]}>Delete</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => setBatchModalOpen(true)}><Text style={styles.btnText}>Apply Rooms</Text></TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setBuildingOpen(false)}><Text style={styles.btnText}>Done</Text></TouchableOpacity>
+            )}
+
+            {roomsOpen && selectedFloor !== null && (
+              <Animated.View style={[styles.roomsScreen, { transform: [{ translateY: roomSlideAnim }] }]}>
+                <View style={styles.roomsHeader}>
+                  <TouchableOpacity onPress={() => { setRoomsOpen(false); setRoomSelectionMode(false); setSelectedRooms([]); }}>
+                    <Ionicons name="arrow-back" size={28} color="#1F2937" />
+                  </TouchableOpacity>
+                  <Text style={styles.headerTitle}>{roomSelectionMode ? `${selectedRooms.length} Selected` : `Floor ${floors[selectedFloor].floorNo}`}</Text>
+                  {roomSelectionMode && (
+                    <TouchableOpacity onPress={() => {setRoomSelectionMode(false); setSelectedRooms([]);}}>
+                       <Text style={{color: '#EF4444', fontWeight: 'bold'}}>Cancel</Text>
+                    </TouchableOpacity>
+                  )}
+                  {!roomSelectionMode && <View style={{ width: 28 }} />}
+                </View>
+
+                <View style={styles.row}>
+                  <TextInput 
+                    placeholder="Rooms count" 
+                    placeholderTextColor="#9CA3AF" 
+                    keyboardType="number-pad" 
+                    value={roomInput} 
+                    onChangeText={setRoomInput} 
+                    style={styles.input} 
+                  />
+                  <TouchableOpacity style={styles.setBtn} onPress={generateRoomsForFloor}>
+                    <Text style={styles.btnText}>Set</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.setBtn, {backgroundColor: '#22C55E'}]} onPress={addRoomManually}>
+                    <Ionicons name="add" size={18} color="#FFF" />
+                    <Text style={styles.btnText}> Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.counterBox}>
+                  <Text style={styles.counterText}>Rooms: {currentFloorRooms} | Total Beds: {currentFloorBeds}</Text>
+                </View>
+
+                <ScrollView contentContainerStyle={styles.gridContainer}>
+                  {floors[selectedFloor].rooms.map((room, index) => (
+                    <TouchableOpacity 
+                        key={index} 
+                        style={[styles.card, (selectedRoom === index || selectedRooms.includes(index)) && styles.selectedCard]} 
+                        onLongPress={() => handleRoomLongPress(index)} 
+                        onPress={() => handleRoomPress(index)}
+                    >
+                      {roomSelectionMode && (
+                        <View style={[styles.checkCircle, selectedRooms.includes(index) && styles.checkCircleActive]}>
+                          {selectedRooms.includes(index) && <Ionicons name="checkmark" size={12} color="white" />}
+                        </View>
+                      )}
+                      <Text style={[styles.cardTitle, (selectedRoom === index || selectedRooms.includes(index)) && {color: '#2F80ED'}]}>
+                         {floors[selectedFloor].floorNo * 100 + room.roomNo}
+                      </Text>
+                      <Text style={styles.cardSub}>{room.beds} Sharing</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {roomSelectionMode ? (
+                  <View style={styles.selectionFooter}>
+                    <TouchableOpacity style={styles.smallActionBtn} onPress={() => setSelectedRooms(floors[selectedFloor].rooms.map((_, i) => i))}><Text style={styles.smallBtnText}>All</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.smallActionBtn, {backgroundColor: '#FEE2E2'}]} onPress={deleteSelectedRooms}><Text style={[styles.smallBtnText, {color: '#EF4444'}]}>Delete</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.primaryBtn} onPress={() => setRoomBatchModalOpen(true)}><Text style={styles.btnText}>Apply Sharing</Text></TouchableOpacity>
+                  </View>
+                ) : (
+                  selectedRoom !== null ? (
+                    <View style={styles.sharingBox}>
+                      <Text style={styles.sharingTitle}>
+                        Beds in Room {floors[selectedFloor].floorNo * 100 + floors[selectedFloor].rooms[selectedRoom].roomNo}
+                      </Text>
+                      <View style={styles.sharingRow}>
+                        <TouchableOpacity onPress={() => updateBeds(-1)}><Ionicons name="remove-circle" size={48} color="#EF4444" /></TouchableOpacity>
+                        <Text style={styles.bedCount}>{floors[selectedFloor].rooms[selectedRoom].beds}</Text>
+                        <TouchableOpacity onPress={() => updateBeds(1)}><Ionicons name="add-circle" size={48} color="#22C55E" /></TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={styles.closeBtn} onPress={() => setRoomsOpen(false)}><Text style={styles.btnText}>Done</Text></TouchableOpacity>
+                  )
+                )}
+
+                {roomBatchModalOpen && (
+                  <View style={styles.batchPopup}>
+                    <Text style={styles.popupTitle}>Apply Sharing to {selectedRooms.length} Rooms</Text>
+                    <TextInput placeholder="No." placeholderTextColor="#9CA3AF" keyboardType="number-pad" value={roomInput} onChangeText={setRoomInput} autoFocus style={styles.batchInput} />
+                    <View style={styles.row}>
+                      <TouchableOpacity style={styles.secondaryBtn} onPress={() => setRoomBatchModalOpen(false)}><Text style={styles.secondaryBtnText}>Cancel</Text></TouchableOpacity>
+                      <TouchableOpacity style={[styles.primaryBtn, {marginLeft: 10}]} onPress={applyBatchSharing}><Text style={styles.btnText}>Apply</Text></TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </Animated.View>
+            )}
+
+            {batchModalOpen && (
+              <View style={styles.batchPopup}>
+                <Text style={styles.popupTitle}>Set Rooms for {selectedFloors.length} Floors</Text>
+                <TextInput placeholder="Rooms per floor" placeholderTextColor="#9CA3AF" keyboardType="number-pad" value={roomInput} onChangeText={setRoomInput} autoFocus style={styles.batchInput} />
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => setBatchModalOpen(false)}><Text style={styles.secondaryBtnText}>Cancel</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.primaryBtn, {marginLeft: 10}]} onPress={applyBatchRooms}><Text style={styles.btnText}>Apply</Text></TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -669,7 +815,6 @@ function ApartmentLayout() {
   };
 
   const totalFlatsCount = floors.reduce((acc, f) => acc + f.flats.length, 0);
-  const currentFloorFlats = selectedFloor !== null ? floors[selectedFloor]?.flats.length : 0;
 
   return (
     <View style={styles.container}>
@@ -869,10 +1014,15 @@ function CommercialLayout() {
   const [floorInput, setFloorInput] = useState('');
   const [floors, setFloors] = useState([]);
   const [buildingOpen, setBuildingOpen] = useState(false);
-  const [editingFloorIndex, setEditingFloorIndex] = useState(null);
-  const [areaTemp, setAreaTemp] = useState('');
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const areaSlideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const [selectedFloor, setSelectedFloor] = useState(null);
+  const [areaOpen, setAreaOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedFloors, setSelectedFloors] = useState([]);
+  const [areaBatchModalOpen, setAreaBatchModalOpen] = useState(false);
+  const [areaInput, setAreaInput] = useState('');
 
   useEffect(() => {
     if (buildingOpen) {
@@ -881,6 +1031,14 @@ function CommercialLayout() {
       slideAnim.setValue(SCREEN_HEIGHT);
     }
   }, [buildingOpen, slideAnim]);
+
+  useEffect(() => {
+    if (areaOpen) {
+      Animated.timing(areaSlideAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
+    } else {
+      areaSlideAnim.setValue(SCREEN_HEIGHT);
+    }
+  }, [areaOpen, areaSlideAnim]);
 
   const generateFloors = () => {
     const num = parseInt(floorInput);
@@ -900,6 +1058,53 @@ function CommercialLayout() {
   };
 
   const configuredCount = floors.filter(f => typeof f.area === 'number').length;
+
+  const handleLongPress = (index) => {
+    setSelectionMode(true);
+    setSelectedFloors([index]);
+  };
+
+  const handlePress = (index) => {
+    if (selectionMode) {
+      if (selectedFloors.includes(index)) {
+        const next = selectedFloors.filter(i => i !== index);
+        setSelectedFloors(next);
+        if (next.length === 0) setSelectionMode(false);
+      } else {
+        setSelectedFloors([...selectedFloors, index]);
+      }
+    } else {
+      setSelectedFloor(index);
+      setAreaOpen(true);
+    }
+  };
+
+  const deleteSelectedFloors = () => {
+    Alert.alert("Delete Floors", `Delete ${selectedFloors.length} floor(s)?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => {
+          const remaining = floors.filter((_, idx) => !selectedFloors.includes(idx));
+          setFloors(remaining.map((f, i) => ({ ...f, floorNo: i + 1 })));
+          setSelectionMode(false);
+          setSelectedFloors([]);
+        } 
+      }
+    ]);
+  };
+
+  const applyBatchArea = () => {
+    const num = parseInt(areaInput);
+    if (isNaN(num) || num <= 0) return;
+    const updated = [...floors];
+    selectedFloors.forEach(idx => {
+      updated[idx].area = num;
+    });
+    setFloors(updated);
+    setAreaInput('');
+    setAreaBatchModalOpen(false);
+    setSelectionMode(false);
+    setSelectedFloors([]);
+  };
 
   return (
     <View style={styles.container}>
@@ -951,79 +1156,86 @@ function CommercialLayout() {
         <View style={styles.overlay}>
           <Animated.View style={[styles.modalBox, { transform: [{ translateY: slideAnim }] }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.sectionTitle}>
-                {editingFloorIndex === null ? "Select a Floor" : `Floor ${floors[editingFloorIndex]?.floorNo}`}
-              </Text>
-              <TouchableOpacity onPress={() => {
-                if (editingFloorIndex !== null) {
-                  setEditingFloorIndex(null);
-                  setAreaTemp('');
-                } else {
-                  setBuildingOpen(false);
-                }
-              }}>
-                <Text style={{color: '#EF4444', fontWeight: 'bold'}}>
-                  {editingFloorIndex === null ? "Close" : "Cancel"}
-                </Text>
-              </TouchableOpacity>
+              <Text style={styles.sectionTitle}>{selectionMode ? `${selectedFloors.length} Selected` : "Select a Floor"}</Text>
+              {selectionMode && (
+                <TouchableOpacity onPress={() => {setSelectionMode(false); setSelectedFloors([]);}}>
+                    <Text style={{color: '#EF4444', fontWeight: 'bold'}}>Cancel</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            {editingFloorIndex === null ? (
-              <ScrollView contentContainerStyle={styles.gridContainer}>
-                {floors.map((floor, index) => (
-                  <TouchableOpacity 
-                    key={index} 
-                    style={styles.card}
-                    onPress={() => {
-                      setEditingFloorIndex(index);
-                      const currentArea = floors[index].area;
-                      setAreaTemp(currentArea != null ? String(currentArea) : '');
-                    }}
-                  >
-                    <Text style={styles.cardTitle}>Floor {floor.floorNo}</Text>
-                    <Text style={styles.cardSub}>
-                      {typeof floor.area === 'number' ? `${floor.area} sq.ft` : "Set area"}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+            <ScrollView contentContainerStyle={styles.gridContainer}>
+              {floors.map((floor, index) => (
+                <TouchableOpacity 
+                  key={index} 
+                  style={[styles.card, selectedFloors.includes(index) && styles.selectedCard]} 
+                  onLongPress={() => handleLongPress(index)} 
+                  onPress={() => handlePress(index)}
+                >
+                  {selectionMode && (
+                    <View style={[styles.checkCircle, selectedFloors.includes(index) && styles.checkCircleActive]}>
+                      {selectedFloors.includes(index) && <Ionicons name="checkmark" size={12} color="white" />}
+                    </View>
+                  )}
+                  <Text style={[styles.cardTitle, selectedFloors.includes(index) && {color: '#2F80ED'}]}>Floor {floor.floorNo}</Text>
+                  <Text style={styles.cardSub}>{typeof floor.area === 'number' ? `${floor.area} sq.ft` : "No area"}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {selectionMode ? (
+              <View style={styles.selectionFooter}>
+                <TouchableOpacity style={styles.smallActionBtn} onPress={() => setSelectedFloors(floors.map((_, i) => i))}><Text style={styles.smallBtnText}>All</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.smallActionBtn, {backgroundColor: '#FEE2E2'}]} onPress={deleteSelectedFloors}><Text style={[styles.smallBtnText, {color: '#EF4444'}]}>Delete</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => setAreaBatchModalOpen(true)}><Text style={styles.btnText}>Apply Area</Text></TouchableOpacity>
+              </View>
             ) : (
-              <>
-                <TextInput
-                  placeholder="Enter Area (sq.ft)"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="number-pad"
-                  value={areaTemp}
-                  onChangeText={setAreaTemp}
-                  style={[styles.input, styles.inputCompact]}
-                />
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TouchableOpacity
-                    style={styles.secondaryBtn}
-                    onPress={() => {
-                      setEditingFloorIndex(null);
-                      setAreaTemp('');
-                    }}
-                  >
-                    <Text style={styles.secondaryBtnText}>Cancel</Text>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setBuildingOpen(false)}><Text style={styles.btnText}>Done</Text></TouchableOpacity>
+            )}
+
+            {areaOpen && selectedFloor !== null && (
+              <Animated.View style={[styles.roomsScreen, { transform: [{ translateY: areaSlideAnim }] }]}>
+                <View style={styles.roomsHeader}>
+                  <TouchableOpacity onPress={() => { setAreaOpen(false); }}>
+                    <Ionicons name="arrow-back" size={28} color="#1F2937" />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, { marginLeft: 10 }]}
-                    onPress={() => {
-                      const val = parseInt(areaTemp);
-                      if (!isNaN(val) && val > 0) {
-                        const updated = [...floors];
-                        updated[editingFloorIndex].area = val;
-                        setFloors(updated);
-                        setEditingFloorIndex(null);
-                        setAreaTemp('');
-                      }
-                    }}
-                  >
+                  <Text style={styles.headerTitle}>{`Floor ${floors[selectedFloor].floorNo}`}</Text>
+                  <View style={{ width: 28 }} />
+                </View>
+
+                <View style={styles.row}>
+                  <TextInput 
+                    placeholder="Area (sq.ft)" 
+                    placeholderTextColor="#9CA3AF" 
+                    keyboardType="number-pad" 
+                    value={areaInput} 
+                    onChangeText={setAreaInput} 
+                    style={[styles.input, styles.inputCompact]} 
+                  />
+                  <TouchableOpacity style={styles.setBtn} onPress={() => {
+                    const num = parseInt(areaInput);
+                    if (isNaN(num) || num <= 0) return;
+                    const updated = [...floors];
+                    updated[selectedFloor].area = num;
+                    setFloors(updated);
+                    setAreaOpen(false);
+                    setAreaInput('');
+                  }}>
                     <Text style={styles.btnText}>Save</Text>
                   </TouchableOpacity>
                 </View>
-              </>
+              </Animated.View>
+            )}
+
+            {areaBatchModalOpen && (
+              <View style={styles.batchPopup}>
+                <Text style={styles.popupTitle}>Apply Area to {selectedFloors.length} Floors</Text>
+                <TextInput placeholder="sq.ft" placeholderTextColor="#9CA3AF" keyboardType="number-pad" value={areaInput} onChangeText={setAreaInput} autoFocus style={styles.batchInput} />
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.secondaryBtn} onPress={() => setAreaBatchModalOpen(false)}><Text style={styles.secondaryBtnText}>Cancel</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.primaryBtn, {marginLeft: 10}]} onPress={applyBatchArea}><Text style={styles.btnText}>Apply</Text></TouchableOpacity>
+                </View>
+              </View>
             )}
           </Animated.View>
         </View>

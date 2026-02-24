@@ -23,7 +23,6 @@ import {
   TouchableOpacity,
   Linking,
   Image,
-  Alert,
 } from "react-native";
 
 // Enable LayoutAnimation for Android
@@ -44,8 +43,6 @@ export default function OwnerRegistrationScreen() {
     new Animated.Value(0),
     new Animated.Value(0),
   ]);
-  const [lineWidth1, setLineWidth1] = useState(0);
-  const [lineWidth2, setLineWidth2] = useState(0);
 
   const initialForm = {
     name: "",
@@ -65,7 +62,6 @@ export default function OwnerRegistrationScreen() {
     rent: "",
     tenantType: "",
     commercialName: "",
-    sqft: "",
     usage: "",
     bankName: "",
     ifsc: "",
@@ -268,18 +264,18 @@ export default function OwnerRegistrationScreen() {
     return "";
   };
 
-  const validateSqft = (sqft) => {
-    if (!sqft || sqft.trim().length === 0) {
-      return "Square feet is required";
-    }
-    if (!/^\d+$/.test(sqft)) {
-      return "Square feet must be a number";
-    }
-    if (parseInt(sqft) <= 0) {
-      return "Square feet must be greater than 0";
-    }
-    return "";
-  };
+  // const validateSqft = (sqft) => {
+  //   // if (!sqft || sqft.trim().length === 0) {
+  //   //   return "Square feet is required";
+  //   // }
+  //   if (!/^\d+$/.test(sqft)) {
+  //     return "Square feet must be a number";
+  //   }
+  //   if (parseInt(sqft) <= 0) {
+  //     return "Square feet must be greater than 0";
+  //   }
+  //   return "";
+  // };
 
   const validateBankName = (bankName) => {
     if (!bankName || bankName.trim().length === 0) {
@@ -350,7 +346,6 @@ export default function OwnerRegistrationScreen() {
     } else if (form.stayType === "commercial") {
       if (validatePropertyName(form.commercialName)) isValid = false;
       if (validateLocation(form.location)) isValid = false;
-      if (validateSqft(form.sqft)) isValid = false;
       if (validateRequired(form.usage, "Usage")) isValid = false;
     }
 
@@ -441,11 +436,9 @@ export default function OwnerRegistrationScreen() {
       } else if (form.stayType === "commercial") {
         const commercialNameError = validatePropertyName(form.commercialName);
         const locationError = validateLocation(form.location);
-        const sqftError = validateSqft(form.sqft);
         const usageError = validateRequired(form.usage, "Usage");
         if (commercialNameError) newErrors.commercialName = commercialNameError;
         if (locationError) newErrors.location = locationError;
-        if (sqftError) newErrors.sqft = sqftError;
         if (usageError) newErrors.usage = usageError;
       }
 
@@ -578,14 +571,7 @@ export default function OwnerRegistrationScreen() {
                         </Text>
                       </View>
                       {i < 3 && (
-                        <View
-                          style={styles.line}
-                          onLayout={(e) => {
-                            const w = e.nativeEvent.layout.width;
-                            if (i === 1) setLineWidth1(w);
-                            else setLineWidth2(w);
-                          }}
-                        >
+                        <View style={styles.line}>
                           <Animated.View
                             style={[
                               styles.lineOverlay,
@@ -1016,6 +1002,35 @@ export default function OwnerRegistrationScreen() {
                             </View>
                           ))}
                         </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {["Water", "Parking", "Lift", "AC", "Non AC"].map(
+                            (label) => (
+                              <TouchableOpacity
+                                key={label}
+                                style={styles.facilityTag}
+                                onPress={() => {
+                                  const exists =
+                                    customFacilities.includes(label);
+                                  setCustomFacilities(
+                                    exists
+                                      ? customFacilities.filter(
+                                          (f) => f !== label
+                                        )
+                                      : [...customFacilities, label]
+                                  );
+                                }}
+                              >
+                                <Text style={styles.facilityText}>{label}</Text>
+                              </TouchableOpacity>
+                            )
+                          )}
+                        </View>
                       </>
                     )}
 
@@ -1217,6 +1232,35 @@ export default function OwnerRegistrationScreen() {
                             </View>
                           ))}
                         </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {["Water", "Parking", "Lift", "AC", "Non AC"].map(
+                            (label) => (
+                              <TouchableOpacity
+                                key={label}
+                                style={styles.facilityTag}
+                                onPress={() => {
+                                  const exists =
+                                    customFacilities.includes(label);
+                                  setCustomFacilities(
+                                    exists
+                                      ? customFacilities.filter(
+                                          (f) => f !== label
+                                        )
+                                      : [...customFacilities, label]
+                                  );
+                                }}
+                              >
+                                <Text style={styles.facilityText}>{label}</Text>
+                              </TouchableOpacity>
+                            )
+                          )}
+                        </View>
                       </>
                     )}
 
@@ -1305,32 +1349,7 @@ export default function OwnerRegistrationScreen() {
                           </MapView>
                         )}
 
-                        <Text style={styles.label}>Square Feet</Text>
-                        <View
-                          style={[
-                            styles.inputContainer,
-                            styles.inputContainerStep2,
-                          ]}
-                        >
-                          <TextInput
-                            style={[
-                              styles.input,
-                              errors.sqft && styles.inputError,
-                              { flex: 1 },
-                            ]}
-                            placeholder="Enter Square Feet"
-                            placeholderTextColor="gray"
-                            value={form.sqft}
-                            keyboardType="numeric"
-                            onChangeText={(v) => {
-                              setForm({ ...form, sqft: v });
-                              setErrors({ ...errors, sqft: validateSqft(v) });
-                            }}
-                          />
-                        </View>
-                        {errors.sqft ? (
-                          <Text style={styles.errorText}>{errors.sqft}</Text>
-                        ) : null}
+                        
 
                         <Text style={styles.label}>Usage</Text>
                         <Picker
@@ -1348,7 +1367,7 @@ export default function OwnerRegistrationScreen() {
                           ]}
                         >
                           <Picker.Item label="Select" value="" />
-                          <Picker.Item label="Office" value="office" />
+                          <Picker.Item label="Lease" value="Lease" />
                           <Picker.Item label="Rent" value="rent" />
                         </Picker>
                         {errors.usage ? (
@@ -1418,6 +1437,35 @@ export default function OwnerRegistrationScreen() {
                               </TouchableOpacity>
                             </View>
                           ))}
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {["Water", "Parking", "Lift", "AC", "Non AC"].map(
+                            (label) => (
+                              <TouchableOpacity
+                                key={label}
+                                style={styles.facilityTag}
+                                onPress={() => {
+                                  const exists =
+                                    customFacilities.includes(label);
+                                  setCustomFacilities(
+                                    exists
+                                      ? customFacilities.filter(
+                                          (f) => f !== label
+                                        )
+                                      : [...customFacilities, label]
+                                  );
+                                }}
+                              >
+                                <Text style={styles.facilityText}>{label}</Text>
+                              </TouchableOpacity>
+                            )
+                          )}
                         </View>
                       </>
                     )}
