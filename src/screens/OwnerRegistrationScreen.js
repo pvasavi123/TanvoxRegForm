@@ -1,6 +1,6 @@
 import { Picker } from "@react-native-picker/picker";
 import * as DocumentPicker from "expo-document-picker";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import * as Location from "expo-location";
 import MapView, { Marker } from "react-native-maps";
 import { StatusBar } from "expo-status-bar";
@@ -39,6 +39,7 @@ export default function OwnerRegistrationScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [customFacilities, setCustomFacilities] = useState([]);
   const [newFacilityText, setNewFacilityText] = useState("");
+  const [selectedFacilities, setSelectedFacilities] = useState([]);
   const [lineProgress] = useState([
     new Animated.Value(0),
     new Animated.Value(0),
@@ -78,20 +79,58 @@ export default function OwnerRegistrationScreen() {
   const [form, setForm] = useState(initialForm);
 
   const [mapRegion, setMapRegion] = useState(null);
+  const [locationPermission, setLocationPermission] = useState(null);
+  const geocodeTimerRef = useRef(null);
 
   useEffect(() => {
-    const geocodeAddress = async () => {
-      if (form.location.trim()) {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          console.error("Permission to access location was denied");
-          return;
-        }
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      setLocationPermission(status);
+    })();
+  }, []);
 
-        try {
-          const geocodedLocation = await Location.geocodeAsync(form.location);
-          if (geocodedLocation.length > 0) {
-            const { latitude, longitude } = geocodedLocation[0];
+  useEffect(() => {
+    if (geocodeTimerRef.current) {
+      clearTimeout(geocodeTimerRef.current);
+      geocodeTimerRef.current = null;
+    }
+    const input = form.location.trim();
+    if (!input) {
+      setMapRegion(null);
+      return;
+    }
+    geocodeTimerRef.current = setTimeout(async () => {
+      try {
+        const timeoutMs = 6000;
+        if (Platform.OS === "android") {
+          const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}`;
+          const fetchPromise = fetch(url, { headers: { Accept: "application/json" } }).then(r => r.json());
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Geocode timeout")), timeoutMs));
+          const items = await Promise.race([fetchPromise, timeoutPromise]);
+          if (Array.isArray(items) && items.length > 0) {
+            const { lat, lon } = items[0];
+            const latitude = parseFloat(lat);
+            const longitude = parseFloat(lon);
+            if (isFinite(latitude) && isFinite(longitude)) {
+              setMapRegion({
+                latitude,
+                longitude,
+                latitudeDelta: 0.0922,
+                longitudeDelta: 0.0421,
+              });
+            } else {
+              setMapRegion(null);
+            }
+          } else {
+            setMapRegion(null);
+          }
+        } else {
+          if (locationPermission !== "granted") return;
+          const geocodePromise = Location.geocodeAsync(input);
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Geocode timeout")), timeoutMs));
+          const result = await Promise.race([geocodePromise, timeoutPromise]);
+          if (Array.isArray(result) && result.length > 0) {
+            const { latitude, longitude } = result[0];
             setMapRegion({
               latitude,
               longitude,
@@ -99,19 +138,20 @@ export default function OwnerRegistrationScreen() {
               longitudeDelta: 0.0421,
             });
           } else {
-            setMapRegion(null); // Clear map if no location found
+            setMapRegion(null);
           }
-        } catch (error) {
-          console.error("Error geocoding address:", error);
-          setMapRegion(null);
         }
-      } else {
-        setMapRegion(null); // Clear map if location input is empty
+      } catch (_err) {
+        setMapRegion(null);
+      }
+    }, 600);
+    return () => {
+      if (geocodeTimerRef.current) {
+        clearTimeout(geocodeTimerRef.current);
+        geocodeTimerRef.current = null;
       }
     };
-
-    geocodeAddress();
-  }, [form.location]);
+  }, [form.location, locationPermission]);
 
   useEffect(() => {
     if (step === 2) {
@@ -1010,25 +1050,25 @@ export default function OwnerRegistrationScreen() {
                           }}
                         >
                           {["Water", "Parking", "Lift", "AC", "Non AC"].map(
-                            (label) => (
-                              <TouchableOpacity
-                                key={label}
-                                style={styles.facilityTag}
-                                onPress={() => {
-                                  const exists =
-                                    customFacilities.includes(label);
-                                  setCustomFacilities(
-                                    exists
-                                      ? customFacilities.filter(
-                                          (f) => f !== label
-                                        )
-                                      : [...customFacilities, label]
-                                  );
-                                }}
-                              >
-                                <Text style={styles.facilityText}>{label}</Text>
-                              </TouchableOpacity>
-                            )
+                            (label) => {
+                              const isSelected = selectedFacilities.includes(label);
+                              return (
+                                <TouchableOpacity
+                                  key={label}
+                                  style={[styles.facilityTag, isSelected && styles.presetSelected]}
+                                  onPress={() => {
+                                    const exists = selectedFacilities.includes(label);
+                                    setSelectedFacilities(
+                                      exists
+                                        ? selectedFacilities.filter((f) => f !== label)
+                                        : [...selectedFacilities, label]
+                                    );
+                                  }}
+                                >
+                                  <Text style={[styles.facilityText, isSelected && { color: "#22C55E" }]}>{label}</Text>
+                                </TouchableOpacity>
+                              );
+                            }
                           )}
                         </View>
                       </>
@@ -1068,6 +1108,7 @@ export default function OwnerRegistrationScreen() {
                           </Text>
                         ) : null}
 
+    
                         <Text style={styles.label}>Location</Text>
                         <View
                           style={[
@@ -1240,25 +1281,25 @@ export default function OwnerRegistrationScreen() {
                           }}
                         >
                           {["Water", "Parking", "Lift", "AC", "Non AC"].map(
-                            (label) => (
-                              <TouchableOpacity
-                                key={label}
-                                style={styles.facilityTag}
-                                onPress={() => {
-                                  const exists =
-                                    customFacilities.includes(label);
-                                  setCustomFacilities(
-                                    exists
-                                      ? customFacilities.filter(
-                                          (f) => f !== label
-                                        )
-                                      : [...customFacilities, label]
-                                  );
-                                }}
-                              >
-                                <Text style={styles.facilityText}>{label}</Text>
-                              </TouchableOpacity>
-                            )
+                            (label) => {
+                              const isSelected = selectedFacilities.includes(label);
+                              return (
+                                <TouchableOpacity
+                                  key={label}
+                                  style={[styles.facilityTag, isSelected && styles.presetSelected]}
+                                  onPress={() => {
+                                    const exists = selectedFacilities.includes(label);
+                                    setSelectedFacilities(
+                                      exists
+                                        ? selectedFacilities.filter((f) => f !== label)
+                                        : [...selectedFacilities, label]
+                                    );
+                                  }}
+                                >
+                                  <Text style={[styles.facilityText, isSelected && { color: "#22C55E" }]}>{label}</Text>
+                                </TouchableOpacity>
+                              );
+                            }
                           )}
                         </View>
                       </>
@@ -1446,25 +1487,25 @@ export default function OwnerRegistrationScreen() {
                           }}
                         >
                           {["Water", "Parking", "Lift", "AC", "Non AC"].map(
-                            (label) => (
-                              <TouchableOpacity
-                                key={label}
-                                style={styles.facilityTag}
-                                onPress={() => {
-                                  const exists =
-                                    customFacilities.includes(label);
-                                  setCustomFacilities(
-                                    exists
-                                      ? customFacilities.filter(
-                                          (f) => f !== label
-                                        )
-                                      : [...customFacilities, label]
-                                  );
-                                }}
-                              >
-                                <Text style={styles.facilityText}>{label}</Text>
-                              </TouchableOpacity>
-                            )
+                            (label) => {
+                              const isSelected = selectedFacilities.includes(label);
+                              return (
+                                <TouchableOpacity
+                                  key={label}
+                                  style={[styles.facilityTag, isSelected && styles.presetSelected]}
+                                  onPress={() => {
+                                    const exists = selectedFacilities.includes(label);
+                                    setSelectedFacilities(
+                                      exists
+                                        ? selectedFacilities.filter((f) => f !== label)
+                                        : [...selectedFacilities, label]
+                                    );
+                                  }}
+                                >
+                                  <Text style={[styles.facilityText, isSelected && { color: "#22C55E" }]}>{label}</Text>
+                                </TouchableOpacity>
+                              );
+                            }
                           )}
                         </View>
                       </>
@@ -1968,6 +2009,11 @@ const styles = StyleSheet.create({
     color: "#0f0e0eff", // Changed text color to red
     fontSize: 14,
     fontWeight: "bold",
+  },
+  presetSelected: {
+    backgroundColor: "#22C55E22",
+    borderWidth: 1,
+    borderColor: "#22C55E"
   },
   map: {
     height: 200,
