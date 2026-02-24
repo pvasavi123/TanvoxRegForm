@@ -1,22 +1,29 @@
 import { Picker } from "@react-native-picker/picker";
 import * as DocumentPicker from "expo-document-picker";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import * as Location from "expo-location";
+import MapView, { Marker } from "react-native-maps";
+import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Step3 from "./Step3";
-
+import { FontAwesome, MaterialIcons } from "@expo/vector-icons";
 import {
   Keyboard,
   KeyboardAvoidingView,
-  LayoutAnimation,
+  Animated,
+  Easing,
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
-  TouchableOpacity,
   TouchableWithoutFeedback,
   UIManager,
   View,
+  Text,
+  TouchableOpacity,
+  Linking,
+  Image,
+  Alert,
 } from "react-native";
 
 // Enable LayoutAnimation for Android
@@ -29,19 +36,120 @@ export default function OwnerRegistrationScreen() {
   const [screen, setScreen] = useState("register");
   const [step, setStep] = useState(1);
   const [errors, setErrors] = useState({});
-  const [activeFloor, setActiveFloor] = useState(null); // which floor is expanded
-  const [activeRoom, setActiveRoom] = useState(null); // which room is expanded
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [customFacilities, setCustomFacilities] = useState([]);
+  const [newFacilityText, setNewFacilityText] = useState("");
+  const [lineProgress] = useState([
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]);
+  const [lineWidth1, setLineWidth1] = useState(0);
+  const [lineWidth2, setLineWidth2] = useState(0);
+
+  const initialForm = {
+    name: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirmPassword: "",
+    stayType: "",
+    hostelType: "",
+    hostelName: "",
+    location: "",
+    wifi: "",
+    parking: "",
+    lift: "",
+    apartmentName: "",
+    bhk: "",
+    rent: "",
+    tenantType: "",
+    commercialName: "",
+    sqft: "",
+    usage: "",
+    bankName: "",
+    ifsc: "",
+    accountNo: "",
+    flatArea: "",
+    bedrooms: "",
+    bathrooms: "",
+    cost: "",
+    carParking: "",
+    negotiable: "",
+    documents: { property: null, identityProof: null, homePics: [] },
+    floorsData: [{ rooms: [] }],
+  };
+  const [form, setForm] = useState(initialForm);
+
+  const [mapRegion, setMapRegion] = useState(null);
+
+  useEffect(() => {
+    const geocodeAddress = async () => {
+      if (form.location.trim()) {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          console.error("Permission to access location was denied");
+          return;
+        }
+
+        try {
+          const geocodedLocation = await Location.geocodeAsync(form.location);
+          if (geocodedLocation.length > 0) {
+            const { latitude, longitude } = geocodedLocation[0];
+            setMapRegion({
+              latitude,
+              longitude,
+              latitudeDelta: 0.0922,
+              longitudeDelta: 0.0421,
+            });
+          } else {
+            setMapRegion(null); // Clear map if no location found
+          }
+        } catch (error) {
+          console.error("Error geocoding address:", error);
+          setMapRegion(null);
+        }
+      } else {
+        setMapRegion(null); // Clear map if location input is empty
+      }
+    };
+
+    geocodeAddress();
+  }, [form.location]);
+
+  useEffect(() => {
+    if (step === 2) {
+      Animated.timing(lineProgress[0], {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }).start();
+    } else if (step === 3) {
+      Animated.timing(lineProgress[1], {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [step, lineProgress]);
 
   // Validation functions
   const validateName = (name) => {
     if (!name || name.length === 0) {
       return "Name is required";
     }
+    // Check for numbers, emojis, and special characters
     if (!/^[A-Za-z\s]+$/.test(name)) {
-      return "Name must contain only alphabets";
+      return "Name must contain only alphabets and spaces";
     }
     if (name.trim().length <= 3) {
       return "Name must be more than 3 characters";
+    }
+    // Check for camel case (first letter capital, rest small, or all small)
+    if (!/^[A-Z][a-z\s]*$|^[a-z\s]+$/.test(name)) {
+      return "Name should start with a capital letter followed by small letters, or all small letters";
     }
     return "";
   };
@@ -50,8 +158,10 @@ export default function OwnerRegistrationScreen() {
     if (!email || email.length === 0) {
       return "Email is required";
     }
-    if (!/^[^\s@]+@gmail\.com$/.test(email)) {
-      return "Email must end with @gmail.com";
+    // Email must start with a letter, followed by alphanumeric, '.', '_', or '-'
+    // and must end with @gmail.com, disallowing emojis and other special characters at the start
+    if (!/^[a-zA-Z][a-zA-Z0-9._-]*@gmail\.com$/.test(email)) {
+      return "Email must start with a letter, contain only letters, numbers, '.', '_', or '-' before '@', and end with @gmail.com";
     }
     return "";
   };
@@ -62,6 +172,18 @@ export default function OwnerRegistrationScreen() {
     }
     if (!/^\d{10}$/.test(phone)) {
       return "Phone number must be exactly 10 digits";
+    }
+    // Phone number should not start with 1, 2, 3, 4, or 5
+    if (!/^[6-9]/.test(phone)) {
+      return "Phone number cannot start with 1, 2, 3, 4, or 5";
+    }
+    // Phone number should not be all zeros
+    if (phone === "0000000000") {
+      return "Phone number cannot be all zeros";
+    }
+    // Phone number should not accept all zeros after the first digit
+    if (phone.length === 10 && phone.substring(1) === "000000000") {
+      return "Phone number cannot have all zeros after the first digit";
     }
     return "";
   };
@@ -105,7 +227,7 @@ export default function OwnerRegistrationScreen() {
     const passwordError = validatePassword(form.password);
     const confirmPasswordError = validateConfirmPassword(
       form.confirmPassword,
-      form.password,
+      form.password
     );
 
     return (
@@ -113,7 +235,8 @@ export default function OwnerRegistrationScreen() {
       !emailError &&
       !phoneError &&
       !passwordError &&
-      !confirmPasswordError
+      !confirmPasswordError &&
+      form.documents.identityProof
     );
   };
 
@@ -198,10 +321,11 @@ export default function OwnerRegistrationScreen() {
     if (!form.documents.property) {
       return "Property document is required";
     }
-    if (!form.documents.identityProof) {
-      return "Identity proof is required";
-    }
-    if (!form.documents.homePics) {
+    if (
+      !form.documents.homePics ||
+      !Array.isArray(form.documents.homePics) ||
+      form.documents.homePics.length === 0
+    ) {
       return "Home pictures are required";
     }
     return "";
@@ -231,9 +355,9 @@ export default function OwnerRegistrationScreen() {
     }
 
     // Validate bank details (common for all)
-    if (validateBankName(form.bankName)) isValid = false;
-    if (validateIFSC(form.ifsc)) isValid = false;
-    if (validateAccountNo(form.accountNo)) isValid = false;
+    // if (validateBankName(form.bankName)) isValid = false;
+    // if (validateIFSC(form.ifsc)) isValid = false;
+    // if (validateAccountNo(form.accountNo)) isValid = false;
 
     // Validate documents
     if (validateDocuments()) isValid = false;
@@ -241,103 +365,40 @@ export default function OwnerRegistrationScreen() {
     return isValid;
   };
 
-  const initialForm = {
-    name: "",
-    email: "",
-    phone: "",
-    password: "",
-    confirmPassword: "",
-    stayType: "",
-    hostelType: "",
-    hostelName: "",
-    location: "",
-    wifi: "",
-    parking: "",
-    lift: "",
-    apartmentName: "",
-    bhk: "",
-    rent: "",
-    hostelName: "",
-    location: "",
-    hostelType: "",
-    wifi: false,
-    parking: false,
-    food: false,
-    lift: false,
-
-    apartmentName: "",
-    bhk: "",
-    tenantType: "",
-
-    commercialName: "",
-    sqft: "",
-    usage: "",
-
-    bankName: "",
-    ifsc: "",
-    accountNo: "",
-    flatArea: "",
-    bedrooms: "",
-    bathrooms: "",
-    cost: "",
-    carParking: "",
-    negotiable: "",
-    documents: { property: null, identityProof: null, homePics: null },
-    bankName: "",
-    ifsc: "",
-    accountNo: "",
-    floorsData: [{ rooms: [] }],
-  };
-
-  const [form, setForm] = useState(initialForm);
-
   const pickDoc = async (key) => {
     const res = await DocumentPicker.getDocumentAsync({});
     if (!res.canceled) {
-      setForm({
-        ...form,
-        documents: { ...form.documents, [key]: res.assets[0] },
-      });
-      // Clear document errors when a document is uploaded
-      const newErrors = { ...errors };
-      delete newErrors[`document_${key}`];
-      delete newErrors.documents;
-      setErrors(newErrors);
+      const asset = res.assets && res.assets[0];
+      if (asset && typeof asset.size === "number" && asset.size > 10240) {
+        const newErrors = {
+          ...errors,
+          [`document_${key}`]: "Image must be 10KB or less",
+        };
+        setErrors(newErrors);
+        return;
+      }
+      if (asset) {
+        if (key === "homePics") {
+          const current = Array.isArray(form.documents.homePics)
+            ? form.documents.homePics
+            : [];
+          const updated = [...current, asset];
+          setForm({
+            ...form,
+            documents: { ...form.documents, homePics: updated },
+          });
+        } else {
+          setForm({
+            ...form,
+            documents: { ...form.documents, [key]: asset },
+          });
+        }
+        const newErrors = { ...errors };
+        delete newErrors[`document_${key}`];
+        delete newErrors.documents;
+        setErrors(newErrors);
+      }
     }
-  };
-
-  const addFloor = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setForm({ ...form, floorsData: [...form.floorsData, { rooms: [] }] });
-  };
-
-  const addRoom = (fIndex) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    const updatedFloors = [...form.floorsData];
-    const floorNumber = fIndex + 1;
-    const roomNumber =
-      floorNumber * 100 + (updatedFloors[fIndex].rooms.length + 1);
-    updatedFloors[fIndex].rooms.push({ number: roomNumber, sharing: "" });
-    setForm({ ...form, floorsData: updatedFloors });
-  };
-
-  const setSharing = (fIndex, rIndex, value) => {
-    const updatedFloors = [...form.floorsData];
-    updatedFloors[fIndex].rooms[rIndex].sharing = value;
-    setForm({ ...form, floorsData: updatedFloors });
-  };
-  const toggleFacility = (key) => {
-    setForm({ ...form, [key]: !form[key] });
-  };
-  const toggleFloor = (index) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setActiveFloor(activeFloor === index ? null : index);
-    setActiveRoom(null);
-  };
-
-  const toggleRoom = (index) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setActiveRoom(activeRoom === index ? null : index);
   };
 
   const circleColor = (index) => {
@@ -345,8 +406,6 @@ export default function OwnerRegistrationScreen() {
     if (step === index) return "#2b6cb0";
     return "#cbd5e0";
   };
-
-  const lineColor = (index) => (step > index ? "#28a745" : "#cbd5e0");
 
   const validateAndShowErrors = () => {
     if (step === 2) {
@@ -362,7 +421,7 @@ export default function OwnerRegistrationScreen() {
         const locationError = validateLocation(form.location);
         const hostelTypeError = validateRequired(
           form.hostelType,
-          "Hostel type",
+          "Hostel type"
         );
         if (hostelNameError) newErrors.hostelName = hostelNameError;
         if (locationError) newErrors.location = locationError;
@@ -373,7 +432,7 @@ export default function OwnerRegistrationScreen() {
         const bhkError = validateRequired(form.bhk, "BHK");
         const tenantTypeError = validateRequired(
           form.tenantType,
-          "Tenant type",
+          "Tenant type"
         );
         if (apartmentNameError) newErrors.apartmentName = apartmentNameError;
         if (locationError) newErrors.location = locationError;
@@ -392,19 +451,21 @@ export default function OwnerRegistrationScreen() {
 
       // Validate bank details
       if (form.stayType) {
-        const bankNameError = validateBankName(form.bankName);
-        const ifscError = validateIFSC(form.ifsc);
-        const accountNoError = validateAccountNo(form.accountNo);
-        if (bankNameError) newErrors.bankName = bankNameError;
-        if (ifscError) newErrors.ifsc = ifscError;
-        if (accountNoError) newErrors.accountNo = accountNoError;
+        // const bankNameError = validateBankName(form.bankName);
+        // const ifscError = validateIFSC(form.ifsc);
+        // const accountNoError = validateAccountNo(form.accountNo);
+        // if (bankNameError) newErrors.bankName = bankNameError;
+        // if (ifscError) newErrors.ifsc = ifscError;
+        // if (accountNoError) newErrors.accountNo = accountNoError;
 
         // Validate documents
         if (!form.documents.property)
           newErrors.document_property = "Property document is required";
-        if (!form.documents.identityProof)
-          newErrors.document_identityProof = "Identity proof is required";
-        if (!form.documents.homePics)
+        if (
+          !form.documents.homePics ||
+          !Array.isArray(form.documents.homePics) ||
+          form.documents.homePics.length === 0
+        )
           newErrors.document_homePics = "Home pictures are required";
       }
 
@@ -430,7 +491,10 @@ export default function OwnerRegistrationScreen() {
 
   if (screen === "welcome") {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: "#97a0ac" }}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: "#97a0ac" }}
+        edges={["left", "right", "bottom"]}
+      >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView
             style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
@@ -457,12 +521,13 @@ export default function OwnerRegistrationScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={["left", "right", "bottom"]}>
+      <StatusBar hidden />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={20}
+          keyboardVerticalOffset={0}
         >
           <View style={styles.page}>
             <View style={styles.card}>
@@ -490,23 +555,53 @@ export default function OwnerRegistrationScreen() {
                             { backgroundColor: circleColor(i) },
                           ]}
                         >
-                          <Text style={styles.circleText}>{i}</Text>
+                          {step > i ? (
+                            <FontAwesome name="check" size={14} color="#fff" />
+                          ) : i === 1 ? (
+                            <FontAwesome name="user" size={14} color="#fff" />
+                          ) : i === 2 ? (
+                            <FontAwesome name="home" size={14} color="#fff" />
+                          ) : (
+                            <FontAwesome
+                              name="building"
+                              size={14}
+                              color="#fff"
+                            />
+                          )}
                         </View>
                         <Text style={styles.stepLabel}>
                           {i === 1
                             ? "Registration"
                             : i === 2
-                              ? "Stay"
-                              : "Floor"}
+                            ? "Stay"
+                            : "Floor"}
                         </Text>
                       </View>
                       {i < 3 && (
                         <View
-                          style={[
-                            styles.line,
-                            { backgroundColor: lineColor(i) },
-                          ]}
-                        />
+                          style={styles.line}
+                          onLayout={(e) => {
+                            const w = e.nativeEvent.layout.width;
+                            if (i === 1) setLineWidth1(w);
+                            else setLineWidth2(w);
+                          }}
+                        >
+                          <Animated.View
+                            style={[
+                              styles.lineOverlay,
+                              {
+                                transform: [
+                                  {
+                                    scaleX:
+                                      i === 1
+                                        ? lineProgress[0]
+                                        : lineProgress[1],
+                                  },
+                                ],
+                              },
+                            ]}
+                          />
+                        </View>
                       )}
                     </React.Fragment>
                   ))}
@@ -516,91 +611,202 @@ export default function OwnerRegistrationScreen() {
                 {step === 1 && (
                   <>
                     <Text style={styles.label}>Name</Text>
-                    <TextInput
-                      style={[styles.input, errors.name && styles.inputError]}
-                      placeholder="Enter Name"
-                      value={form.name}
-                      onChangeText={(v) => {
-                        setForm({ ...form, name: v });
-                        setErrors({ ...errors, name: validateName(v) });
-                      }}
-                    />
+                    <View style={styles.inputContainer}>
+                      <FontAwesome
+                        name="user"
+                        size={20}
+                        color="#007bff" // Vibrant blue color
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={[
+                          styles.input,
+                          errors.name && styles.inputError,
+                          { flex: 1 },
+                        ]}
+                        placeholder="Enter Name"
+                        placeholderTextColor="gray"
+                        value={form.name}
+                        onChangeText={(v) => {
+                          const filtered = v.replace(/[^A-Za-z\s]/g, "");
+                          setForm({ ...form, name: filtered });
+                          setErrors({ ...errors, name: validateName(filtered) });
+                        }}
+                      />
+                    </View>
                     {errors.name ? (
                       <Text style={styles.errorText}>{errors.name}</Text>
                     ) : null}
 
                     <Text style={styles.label}>Email</Text>
-                    <TextInput
-                      style={[styles.input, errors.email && styles.inputError]}
-                      placeholder="Enter Email"
-                      value={form.email}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      onChangeText={(v) => {
-                        setForm({ ...form, email: v });
-                        setErrors({ ...errors, email: validateEmail(v) });
-                      }}
-                    />
+                    <View style={styles.inputContainer}>
+                      <FontAwesome
+                        name="envelope"
+                        size={20}
+                        color="#007bff" // Vibrant blue color
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={[
+                          styles.input,
+                          errors.email && styles.inputError,
+                          { flex: 1 },
+                        ]}
+                        placeholder="Enter Email"
+                        placeholderTextColor="gray"
+                        value={form.email}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        onChangeText={(v) => {
+                          setForm({ ...form, email: v });
+                          setErrors({ ...errors, email: validateEmail(v) });
+                        }}
+                      />
+                    </View>
                     {errors.email ? (
                       <Text style={styles.errorText}>{errors.email}</Text>
                     ) : null}
                     <Text style={styles.label}>Phone</Text>
-                    <TextInput
-                      style={[styles.input, errors.phone && styles.inputError]}
-                      placeholder="Enter Phone"
-                      value={form.phone}
-                      keyboardType="numeric"
-                      maxLength={10}
-                      onChangeText={(v) => {
-                        setForm({ ...form, phone: v });
-                        setErrors({ ...errors, phone: validatePhone(v) });
-                      }}
-                    />
+                    <View style={styles.inputContainer}>
+                      <FontAwesome
+                        name="phone"
+                        size={20}
+                        color="#007bff" // Vibrant blue color
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={[
+                          styles.input,
+                          errors.phone && styles.inputError,
+                          { flex: 1 },
+                        ]}
+                        placeholder="Enter Phone"
+                        placeholderTextColor="gray"
+                        value={form.phone}
+                        keyboardType="numeric"
+                        maxLength={10}
+                        onChangeText={(v) => {
+                          setForm({ ...form, phone: v });
+                          setErrors({ ...errors, phone: validatePhone(v) });
+                        }}
+                      />
+                    </View>
                     {errors.phone ? (
                       <Text style={styles.errorText}>{errors.phone}</Text>
                     ) : null}
 
                     <Text style={styles.label}>Password</Text>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        errors.password && styles.inputError,
-                      ]}
-                      placeholder="Enter Password"
-                      value={form.password}
-                      secureTextEntry
-                      onChangeText={(v) => {
-                        setForm({ ...form, password: v });
-                        setErrors({ ...errors, password: validatePassword(v) });
-                      }}
-                    />
+                    <View style={styles.inputContainer}>
+                      <FontAwesome
+                        name="lock"
+                        size={20}
+                        color="#007bff" // Vibrant blue color
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={[
+                          styles.input,
+                          errors.password && styles.inputError,
+                          { flex: 1 },
+                        ]}
+                        placeholder="Enter Password"
+                        placeholderTextColor="gray"
+                        value={form.password}
+                        secureTextEntry={!showPassword}
+                        onChangeText={(v) => {
+                          setForm({ ...form, password: v });
+                          setErrors({
+                            ...errors,
+                            password: validatePassword(v),
+                          });
+                        }}
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordToggle}
+                        onPress={() => setShowPassword(!showPassword)}
+                      >
+                        <FontAwesome
+                          name={showPassword ? "eye" : "eye-slash"}
+                          size={20}
+                          color="#007bff" // Vibrant blue color
+                        />
+                      </TouchableOpacity>
+                    </View>
                     {errors.password ? (
                       <Text style={styles.errorText}>{errors.password}</Text>
                     ) : null}
 
                     <Text style={styles.label}>Confirm Password</Text>
-                    <TextInput
-                      style={[
-                        styles.input,
-                        errors.confirmPassword && styles.inputError,
-                      ]}
-                      placeholder="Confirm Password"
-                      value={form.confirmPassword}
-                      secureTextEntry
-                      onChangeText={(v) => {
-                        setForm({ ...form, confirmPassword: v });
-                        setErrors({
-                          ...errors,
-                          confirmPassword: validateConfirmPassword(
-                            v,
-                            form.password,
-                          ),
-                        });
-                      }}
-                    />
+                    <View style={styles.inputContainer}>
+                      <FontAwesome
+                        name="lock"
+                        size={20}
+                        color="#007bff" // Vibrant blue color
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={[
+                          styles.input,
+                          errors.confirmPassword && styles.inputError,
+                          { flex: 1 },
+                        ]}
+                        placeholder="Confirm Password"
+                        placeholderTextColor="gray"
+                        value={form.confirmPassword}
+                        secureTextEntry={!showConfirmPassword}
+                        onChangeText={(v) => {
+                          setForm({ ...form, confirmPassword: v });
+                          setErrors({
+                            ...errors,
+                            confirmPassword: validateConfirmPassword(
+                              v,
+                              form.password
+                            ),
+                          });
+                        }}
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordToggle}
+                        onPress={() =>
+                          setShowConfirmPassword(!showConfirmPassword)
+                        }
+                      >
+                        <FontAwesome
+                          name={showConfirmPassword ? "eye" : "eye-slash"}
+                          size={20}
+                          color="#007bff" // Vibrant blue color
+                        />
+                      </TouchableOpacity>
+                    </View>
                     {errors.confirmPassword ? (
                       <Text style={styles.errorText}>
                         {errors.confirmPassword}
+                      </Text>
+                    ) : null}
+
+                    <Text style={styles.label}>Identity Proof</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.btn,
+                        {
+                          backgroundColor: form.documents.identityProof
+                            ? "#28a745"
+                            : "#225a93",
+                        },
+                        errors.document_identityProof && {
+                          borderColor: "#dc2626",
+                          borderWidth: 2,
+                        },
+                      ]}
+                      onPress={() => pickDoc("identityProof")}
+                    >
+                      <Text style={{ color: "#fff" }}>
+                        {form.documents.identityProof ? "Uploaded ✓" : "Upload Identity Proof"}
+                      </Text>
+                    </TouchableOpacity>
+                    {errors.document_identityProof ? (
+                      <Text style={styles.errorText}>
+                        {errors.document_identityProof}
                       </Text>
                     ) : null}
                   </>
@@ -639,20 +845,30 @@ export default function OwnerRegistrationScreen() {
                     {form.stayType === "hostel" && (
                       <>
                         <Text style={styles.label}>Hostel Name</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.hostelName && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.hostelName}
-                          onChangeText={(v) => {
-                            setForm({ ...form, hostelName: v });
-                            setErrors({
-                              ...errors,
-                              hostelName: validatePropertyName(v),
-                            });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.hostelName && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Hostel Name"
+                            placeholderTextColor="gray"
+                            value={form.hostelName}
+                            onChangeText={(v) => {
+                              setForm({ ...form, hostelName: v });
+                              setErrors({
+                                ...errors,
+                                hostelName: validatePropertyName(v),
+                              });
+                            }}
+                          />
+                        </View>
                         {errors.hostelName ? (
                           <Text style={styles.errorText}>
                             {errors.hostelName}
@@ -660,25 +876,55 @@ export default function OwnerRegistrationScreen() {
                         ) : null}
 
                         <Text style={styles.label}>Location</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.location && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.location}
-                          onChangeText={(v) => {
-                            setForm({ ...form, location: v });
-                            setErrors({
-                              ...errors,
-                              location: validateLocation(v),
-                            });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.location && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Location"
+                            placeholderTextColor="gray"
+                            value={form.location}
+                            onChangeText={(v) => {
+                              setForm({ ...form, location: v });
+                              setErrors({
+                                ...errors,
+                                location: validateLocation(v),
+                              });
+                            }}
+                          />
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (form.location.trim()) {
+                                Linking.openURL(
+                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                    form.location.trim()
+                                  )}`
+                                );
+                              }
+                            }}
+                            style={{ padding: 8 }}
+                          >
+                            <MaterialIcons name="map" size={24} color="gray" />
+                          </TouchableOpacity>
+                        </View>
                         {errors.location ? (
                           <Text style={styles.errorText}>
                             {errors.location}
                           </Text>
                         ) : null}
+
+                        {mapRegion && (
+                          <MapView style={styles.map} region={mapRegion}>
+                            <Marker coordinate={mapRegion} />
+                          </MapView>
+                        )}
 
                         <Text style={styles.label}>Hostel Type</Text>
                         <Picker
@@ -708,21 +954,66 @@ export default function OwnerRegistrationScreen() {
 
                         <Text style={styles.label}>Facilities</Text>
                         <View
-                          style={{ flexDirection: "row", flexWrap: "wrap" }}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            marginBottom: 10,
+                          }}
                         >
-                          {["wifi", "parking", "food", "lift"].map((k) => (
-                            <TouchableOpacity
-                              key={k}
-                              style={[
-                                styles.oval,
-                                form[k] && { backgroundColor: "#28a745" },
-                              ]}
-                              onPress={() => toggleFacility(k)}
-                            >
-                              <Text style={{ color: "#fff" }}>
-                                {k.toUpperCase()}
+                          <View
+                            style={[
+                              styles.inputContainer,
+                              { flex: 1, marginBottom: 0 },
+                            ]}
+                          >
+                            <TextInput
+                              style={[styles.input, { flex: 1 }]}
+                              placeholder="Add new facility"
+                              placeholderTextColor="gray"
+                              value={newFacilityText}
+                              onChangeText={setNewFacilityText}
+                            />
+                          </View>
+                          <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={() => {
+                              if (newFacilityText.trim()) {
+                                setCustomFacilities([
+                                  ...customFacilities,
+                                  newFacilityText.trim(),
+                                ]);
+                                setNewFacilityText("");
+                              }
+                            }}
+                          >
+                            <Text style={styles.addButtonText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {customFacilities.map((facility, index) => (
+                            <View key={index} style={styles.facilityTag}>
+                              <Text style={styles.facilityText}>
+                                {facility}
                               </Text>
-                            </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.removeButton}
+                                onPress={() => {
+                                  setCustomFacilities(
+                                    customFacilities.filter(
+                                      (_, i) => i !== index
+                                    )
+                                  );
+                                }}
+                              >
+                                <Text style={styles.removeButtonText}>-</Text>
+                              </TouchableOpacity>
+                            </View>
                           ))}
                         </View>
                       </>
@@ -732,20 +1023,30 @@ export default function OwnerRegistrationScreen() {
                     {form.stayType === "apartment" && (
                       <>
                         <Text style={styles.label}>Apartment Name</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.apartmentName && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.apartmentName}
-                          onChangeText={(v) => {
-                            setForm({ ...form, apartmentName: v });
-                            setErrors({
-                              ...errors,
-                              apartmentName: validatePropertyName(v),
-                            });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.apartmentName && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Apartment Name"
+                            placeholderTextColor="gray"
+                            value={form.apartmentName}
+                            onChangeText={(v) => {
+                              setForm({ ...form, apartmentName: v });
+                              setErrors({
+                                ...errors,
+                                apartmentName: validatePropertyName(v),
+                              });
+                            }}
+                          />
+                        </View>
                         {errors.apartmentName ? (
                           <Text style={styles.errorText}>
                             {errors.apartmentName}
@@ -753,25 +1054,55 @@ export default function OwnerRegistrationScreen() {
                         ) : null}
 
                         <Text style={styles.label}>Location</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.location && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.location}
-                          onChangeText={(v) => {
-                            setForm({ ...form, location: v });
-                            setErrors({
-                              ...errors,
-                              location: validateLocation(v),
-                            });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.location && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Location"
+                            placeholderTextColor="gray"
+                            value={form.location}
+                            onChangeText={(v) => {
+                              setForm({ ...form, location: v });
+                              setErrors({
+                                ...errors,
+                                location: validateLocation(v),
+                              });
+                            }}
+                          />
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (form.location.trim()) {
+                                Linking.openURL(
+                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                    form.location.trim()
+                                  )}`
+                                );
+                              }
+                            }}
+                            style={{ padding: 8 }}
+                          >
+                            <MaterialIcons name="map" size={24} color="gray" />
+                          </TouchableOpacity>
+                        </View>
                         {errors.location ? (
                           <Text style={styles.errorText}>
                             {errors.location}
                           </Text>
                         ) : null}
+
+                        {mapRegion && (
+                          <MapView style={styles.map} region={mapRegion}>
+                            <Marker coordinate={mapRegion} />
+                          </MapView>
+                        )}
 
                         <Text style={styles.label}>BHK</Text>
                         <Picker
@@ -824,21 +1155,66 @@ export default function OwnerRegistrationScreen() {
 
                         <Text style={styles.label}>Facilities</Text>
                         <View
-                          style={{ flexDirection: "row", flexWrap: "wrap" }}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            marginBottom: 10,
+                          }}
                         >
-                          {["wifi", "parking", "food", "lift"].map((k) => (
-                            <TouchableOpacity
-                              key={k}
-                              style={[
-                                styles.oval,
-                                form[k] && { backgroundColor: "#28a745" },
-                              ]}
-                              onPress={() => toggleFacility(k)}
-                            >
-                              <Text style={{ color: "#fff" }}>
-                                {k.toUpperCase()}
+                          <View
+                            style={[
+                              styles.inputContainer,
+                              { flex: 1, marginBottom: 0 },
+                            ]}
+                          >
+                            <TextInput
+                              style={[styles.input, { flex: 1 }]}
+                              placeholder="Add new facility"
+                              placeholderTextColor="gray"
+                              value={newFacilityText}
+                              onChangeText={setNewFacilityText}
+                            />
+                          </View>
+                          <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={() => {
+                              if (newFacilityText.trim()) {
+                                setCustomFacilities([
+                                  ...customFacilities,
+                                  newFacilityText.trim(),
+                                ]);
+                                setNewFacilityText("");
+                              }
+                            }}
+                          >
+                            <Text style={styles.addButtonText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {customFacilities.map((facility, index) => (
+                            <View key={index} style={styles.facilityTag}>
+                              <Text style={styles.facilityText}>
+                                {facility}
                               </Text>
-                            </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.removeButton}
+                                onPress={() => {
+                                  setCustomFacilities(
+                                    customFacilities.filter(
+                                      (_, i) => i !== index
+                                    )
+                                  );
+                                }}
+                              >
+                                <Text style={styles.removeButtonText}>-</Text>
+                              </TouchableOpacity>
+                            </View>
                           ))}
                         </View>
                       </>
@@ -848,20 +1224,30 @@ export default function OwnerRegistrationScreen() {
                     {form.stayType === "commercial" && (
                       <>
                         <Text style={styles.label}>Property Name</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.commercialName && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.commercialName}
-                          onChangeText={(v) => {
-                            setForm({ ...form, commercialName: v });
-                            setErrors({
-                              ...errors,
-                              commercialName: validatePropertyName(v),
-                            });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.commercialName && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Property Name"
+                            placeholderTextColor="gray"
+                            value={form.commercialName}
+                            onChangeText={(v) => {
+                              setForm({ ...form, commercialName: v });
+                              setErrors({
+                                ...errors,
+                                commercialName: validatePropertyName(v),
+                              });
+                            }}
+                          />
+                        </View>
                         {errors.commercialName ? (
                           <Text style={styles.errorText}>
                             {errors.commercialName}
@@ -869,39 +1255,79 @@ export default function OwnerRegistrationScreen() {
                         ) : null}
 
                         <Text style={styles.label}>Location</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.location && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.location}
-                          onChangeText={(v) => {
-                            setForm({ ...form, location: v });
-                            setErrors({
-                              ...errors,
-                              location: validateLocation(v),
-                            });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.location && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Location"
+                            placeholderTextColor="gray"
+                            value={form.location}
+                            onChangeText={(v) => {
+                              setForm({ ...form, location: v });
+                              setErrors({
+                                ...errors,
+                                location: validateLocation(v),
+                              });
+                            }}
+                          />
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (form.location.trim()) {
+                                Linking.openURL(
+                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                                    form.location.trim()
+                                  )}`
+                                );
+                              }
+                            }}
+                            style={{ padding: 8 }}
+                          >
+                            <MaterialIcons name="map" size={24} color="gray" />
+                          </TouchableOpacity>
+                        </View>
                         {errors.location ? (
                           <Text style={styles.errorText}>
                             {errors.location}
                           </Text>
                         ) : null}
 
+                        {mapRegion && (
+                          <MapView style={styles.map} region={mapRegion}>
+                            <Marker coordinate={mapRegion} />
+                          </MapView>
+                        )}
+
                         <Text style={styles.label}>Square Feet</Text>
-                        <TextInput
+                        <View
                           style={[
-                            styles.input,
-                            errors.sqft && styles.inputError,
+                            styles.inputContainer,
+                            styles.inputContainerStep2,
                           ]}
-                          value={form.sqft}
-                          keyboardType="numeric"
-                          onChangeText={(v) => {
-                            setForm({ ...form, sqft: v });
-                            setErrors({ ...errors, sqft: validateSqft(v) });
-                          }}
-                        />
+                        >
+                          <TextInput
+                            style={[
+                              styles.input,
+                              errors.sqft && styles.inputError,
+                              { flex: 1 },
+                            ]}
+                            placeholder="Enter Square Feet"
+                            placeholderTextColor="gray"
+                            value={form.sqft}
+                            keyboardType="numeric"
+                            onChangeText={(v) => {
+                              setForm({ ...form, sqft: v });
+                              setErrors({ ...errors, sqft: validateSqft(v) });
+                            }}
+                          />
+                        </View>
                         {errors.sqft ? (
                           <Text style={styles.errorText}>{errors.sqft}</Text>
                         ) : null}
@@ -931,21 +1357,66 @@ export default function OwnerRegistrationScreen() {
 
                         <Text style={styles.label}>Facilities</Text>
                         <View
-                          style={{ flexDirection: "row", flexWrap: "wrap" }}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            marginBottom: 10,
+                          }}
                         >
-                          {["wifi", "parking", "food", "lift"].map((k) => (
-                            <TouchableOpacity
-                              key={k}
-                              style={[
-                                styles.oval,
-                                form[k] && { backgroundColor: "#28a745" },
-                              ]}
-                              onPress={() => toggleFacility(k)}
-                            >
-                              <Text style={{ color: "#fff" }}>
-                                {k.toUpperCase()}
+                          <View
+                            style={[
+                              styles.inputContainer,
+                              { flex: 1, marginBottom: 0 },
+                            ]}
+                          >
+                            <TextInput
+                              style={[styles.input, { flex: 1 }]}
+                              placeholder="Add new facility"
+                              placeholderTextColor="gray"
+                              value={newFacilityText}
+                              onChangeText={setNewFacilityText}
+                            />
+                          </View>
+                          <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={() => {
+                              if (newFacilityText.trim()) {
+                                setCustomFacilities([
+                                  ...customFacilities,
+                                  newFacilityText.trim(),
+                                ]);
+                                setNewFacilityText("");
+                              }
+                            }}
+                          >
+                            <Text style={styles.addButtonText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            flexWrap: "wrap",
+                            marginBottom: 10,
+                          }}
+                        >
+                          {customFacilities.map((facility, index) => (
+                            <View key={index} style={styles.facilityTag}>
+                              <Text style={styles.facilityText}>
+                                {facility}
                               </Text>
-                            </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.removeButton}
+                                onPress={() => {
+                                  setCustomFacilities(
+                                    customFacilities.filter(
+                                      (_, i) => i !== index
+                                    )
+                                  );
+                                }}
+                              >
+                                <Text style={styles.removeButtonText}>-</Text>
+                              </TouchableOpacity>
+                            </View>
                           ))}
                         </View>
                       </>
@@ -1023,78 +1494,170 @@ export default function OwnerRegistrationScreen() {
                     {form.stayType !== "" && (
                       <>
                         <Text style={styles.sectionTitle}>Documents</Text>
-                        {["property", "identityProof", "homePics"].map(
-                          (key) => (
-                            <View key={key} style={{ marginVertical: 5 }}>
-                              <Text style={styles.label}>
-                                {key === "property"
-                                  ? "Property Document"
-                                  : key === "identityProof"
-                                    ? "Identity Proof"
-                                    : "Home Pictures"}
-                              </Text>
-                              <TouchableOpacity
-                                style={[
-                                  styles.btn,
-                                  {
-                                    backgroundColor: form.documents[key]
-                                      ? "#28a745"
-                                      : "#225a93",
-                                  },
-                                  errors[`document_${key}`] && {
-                                    borderColor: "#dc2626",
-                                    borderWidth: 2,
-                                  },
-                                ]}
-                                onPress={() => pickDoc(key)}
+                        {/* Property document (single) */}
+                        <View style={{ marginVertical: 5 }}>
+                          <Text style={styles.label}>Property Document</Text>
+                          <TouchableOpacity
+                            style={[
+                              styles.btn,
+                              {
+                                backgroundColor: form.documents.property
+                                  ? "#28a745"
+                                  : "#225a93",
+                              },
+                              errors.document_property && {
+                                borderColor: "#dc2626",
+                                borderWidth: 2,
+                              },
+                            ]}
+                            onPress={() => pickDoc("property")}
+                          >
+                            <Text style={{ color: "#fff" }}>
+                              {form.documents.property ? "Uploaded ✓" : "Upload"}
+                            </Text>
+                          </TouchableOpacity>
+                          {errors.document_property ? (
+                            <Text style={styles.errorText}>
+                              {errors.document_property}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Home pictures (multiple) */}
+                        <View style={{ marginVertical: 5 }}>
+                          <Text style={styles.label}>
+                            {form.stayType === "hostel"
+                              ? "Hostel Images"
+                              : form.stayType === "apartment"
+                              ? "Apartment Images"
+                              : "Commercial Images"}
+                          </Text>
+                          <TouchableOpacity
+                            style={[
+                              styles.btn,
+                              {
+                                backgroundColor:
+                                  Array.isArray(form.documents.homePics) &&
+                                  form.documents.homePics.length > 0
+                                    ? "#28a745"
+                                    : "#225a93",
+                              },
+                              errors.document_homePics && {
+                                borderColor: "#dc2626",
+                                borderWidth: 2,
+                              },
+                            ]}
+                            onPress={() => pickDoc("homePics")}
+                          >
+                            <Text style={{ color: "#fff" }}>
+                              {Array.isArray(form.documents.homePics) &&
+                              form.documents.homePics.length > 0
+                                ? `Uploaded ${form.documents.homePics.length} ✓`
+                                : "Add Image"}
+                            </Text>
+                          </TouchableOpacity>
+                          {errors.document_homePics ? (
+                            <Text style={styles.errorText}>
+                              {errors.document_homePics}
+                            </Text>
+                          ) : null}
+                          {Array.isArray(form.documents.homePics) &&
+                            form.documents.homePics.length > 0 && (
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  flexWrap: "wrap",
+                                  marginTop: 8,
+                                }}
                               >
-                                <Text style={{ color: "#fff" }}>
-                                  {form.documents[key]
-                                    ? "Uploaded ✓"
-                                    : "Upload"}
-                                </Text>
-                              </TouchableOpacity>
-                              {errors[`document_${key}`] ? (
-                                <Text style={styles.errorText}>
-                                  {errors[`document_${key}`]}
-                                </Text>
-                              ) : null}
-                            </View>
-                          ),
-                        )}
+                                {form.documents.homePics.map((img, idx) => (
+                                  <View
+                                    key={idx}
+                                    style={{
+                                      marginRight: 8,
+                                      marginBottom: 8,
+                                      position: "relative",
+                                    }}
+                                  >
+                                    <Image
+                                      source={{ uri: img.uri }}
+                                      style={{
+                                        width: 64,
+                                        height: 64,
+                                        borderRadius: 6,
+                                        borderWidth: 1,
+                                        borderColor: "#cbd5e0",
+                                      }}
+                                    />
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        const current = Array.isArray(
+                                          form.documents.homePics
+                                        )
+                                          ? form.documents.homePics
+                                          : [];
+                                        const updated = current.filter(
+                                          (_, i) => i !== idx
+                                        );
+                                        const newErrors = { ...errors };
+                                        if (updated.length === 0) {
+                                          newErrors.document_homePics =
+                                            "Home pictures are required";
+                                        } else {
+                                          delete newErrors.document_homePics;
+                                        }
+                                        setForm({
+                                          ...form,
+                                          documents: {
+                                            ...form.documents,
+                                            homePics: updated,
+                                          },
+                                        });
+                                        setErrors(newErrors);
+                                      }}
+                                      style={{
+                                        position: "absolute",
+                                        top: -6,
+                                        right: -6,
+                                        backgroundColor: "#dc2626",
+                                        borderRadius: 10,
+                                        paddingHorizontal: 6,
+                                        paddingVertical: 2,
+                                      }}
+                                    >
+                                      <Text style={{ color: "#fff" }}>x</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                        </View>
+                        {/* <View style={{ marginTop: 8, marginBottom: 4 }}>
+                          <TouchableOpacity
+                            style={[styles.btn, { backgroundColor: "#2F80ED" }]}
+                            onPress={() => {
+                              const q = (form.location || "").trim();
+                              const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q || "near me")}`;
+                              Linking.openURL(url).catch(err => console.error("Failed to open URL:", err));
+                            }}
+                          >
+                            <Text style={{ color: "#fff" }}>Open in Google Maps</Text>
+                          </TouchableOpacity>
+                        </View> */}
                       </>
                     )}
                   </>
                 )}
 
                 {/* ---------- STEP 3 ---------- */}
-                {step === 3 && (
-                  <Step3
-                    form={form}
-                    setForm={setForm}
-                    errors={errors}
-                    setErrors={setErrors}
-                    addFloor={addFloor}
-                    addRoom={addRoom}
-                    setSharing={setSharing}
-                    toggleFloor={toggleFloor}
-                    activeFloor={activeFloor}
-                    toggleRoom={toggleRoom}
-                    activeRoom={activeRoom}
-                  />
-                )}
+                {step === 3 && <Step3 form={form} />}
               </ScrollView>
 
               {/* BUTTONS */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                }}
-              >
+              <View style={styles.actionBar}>
                 {step > 1 && (
                   <TouchableOpacity
-                    style={[styles.btn, { flex: 1, marginRight: 5 }]}
+                    style={[styles.btn, { flex: 1, marginRight: 8 }]}
                     onPress={() => setStep(step - 1)}
                   >
                     <Text style={{ color: "#fff" }}>Back</Text>
@@ -1137,39 +1700,42 @@ export default function OwnerRegistrationScreen() {
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    backgroundColor: "#f5e8d1",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 20,
+    backgroundColor: "#fff",
+    justifyContent: "flex-start", // Reverted to flex-start to allow paddingTop
+    alignItems: "stretch",
+    paddingVertical: 10,
+    paddingTop: 50, // Set padding to push content down
   },
   card: {
-    width: "92%",
+    width: "100%",
+    height: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
     backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    maxHeight: "90%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    borderRadius: 12, // Added border radius
+    paddingTop: 10,
+    paddingHorizontal: 30, // Increased horizontal padding
+    paddingBottom: 20,
+    marginVertical: 20, // Added vertical margin
+    marginHorizontal: 15, // Added horizontal margin
+    elevation: 6, // Android shadow
+    shadowColor: "#000", // iOS shadow
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
+    shadowRadius: 6,
+    flex: 1,
   },
   title: {
     fontSize: 22,
     fontWeight: "bold",
     textAlign: "center",
-    marginBottom: 15,
+    marginBottom: 8,
     color: "#1a3c5d",
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e0",
-    backgroundColor: "#f0f7ff",
-    padding: 12,
-    marginBottom: 5,
-    borderRadius: 8,
-    color: "#0f172a",
+    color: "black",
     fontSize: 16,
+    paddingVertical: 12, // Increased vertical padding for taller text boxes
   },
   inputError: { borderColor: "#dc2626", borderWidth: 2 },
   errorText: {
@@ -1192,13 +1758,35 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: "center",
     borderRadius: 8,
-    marginTop: 10,
+    marginTop: 0,
+  },
+  //  walker: {
+  //   position: "absolute",
+  //   top: -2, // Adjust as needed
+  //   left: 10, // Adjust as needed
+  //   zIndex: 1,
+  // },
+  actionBar: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    bottom: 0,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 10,
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   stepWrap: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    marginBottom: 8,
   },
   stepItem: { alignItems: "center" },
   circle: {
@@ -1214,9 +1802,20 @@ const styles = StyleSheet.create({
     height: 2,
     flex: 1,
     marginHorizontal: 5,
-    marginTop: 15,
+    marginTop: 6,
     backgroundColor: "#cbd5e0",
+    position: "relative",
   },
+  lineOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "#28a745",
+    transform: [{ scaleX: 0 }],
+  },
+
   label: { fontWeight: "bold", marginBottom: 6 },
   sectionTitle: { fontSize: 18, fontWeight: "bold", marginVertical: 10 },
   floorBtn: {
@@ -1261,5 +1860,71 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 25,
     margin: 4,
+  },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    backgroundColor: "white", // Changed to black background
+    borderColor: "black", // Changed to black border
+    marginBottom: 10,
+  },
+  inputContainerStep2: {
+    borderColor: "#a0aec0", // Light gray border for step 2 inputs
+  },
+  inputIcon: {
+    marginRight: 10, // Add some space between icon and text input
+  },
+  passwordToggle: {
+    padding: 5,
+  },
+  addButton: {
+    backgroundColor: "#28a745", // Green color for add button
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    marginLeft: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addButtonText: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  facilityTag: {
+    flexDirection: "row",
+    backgroundColor: "#f0f4f7ff", // Blue background for facility tags
+    borderRadius: 15,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    marginRight: 10,
+    marginBottom: 10,
+    alignItems: "center",
+  },
+  facilityText: {
+    color: "#0a0a0aff",
+    marginRight: 5,
+  },
+  removeButton: {
+    // backgroundColor: "#dc3545", // Red color for remove button - removed background
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  removeButtonText: {
+    color: "#0f0e0eff", // Changed text color to red
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  map: {
+    height: 200,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#000",
   },
 });
