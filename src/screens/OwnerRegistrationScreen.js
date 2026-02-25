@@ -2,7 +2,6 @@ import { Picker } from "@react-native-picker/picker";
 import * as DocumentPicker from "expo-document-picker";
 import React, { useState, useEffect, useRef } from "react";
 import * as Location from "expo-location";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FontAwesome, MaterialIcons, Ionicons } from "@expo/vector-icons";
@@ -24,8 +23,30 @@ import {
   TouchableOpacity,
   Linking,
   Image,
+  Alert,
 } from "react-native";
 
+let MapView, Marker, PROVIDER_GOOGLE;
+try {
+  if (Platform.OS !== "web") {
+    const RNMaps = require("react-native-maps");
+    MapView = RNMaps.default;
+    Marker = RNMaps.Marker;
+    PROVIDER_GOOGLE = RNMaps.PROVIDER_GOOGLE;
+  } else {
+    MapView = View;
+    Marker = function Marker() {
+      return null;
+    };
+    PROVIDER_GOOGLE = undefined;
+  }
+} catch (_e) {
+  MapView = View;
+  Marker = function Marker() {
+    return null;
+  };
+  PROVIDER_GOOGLE = undefined;
+}
 // Enable LayoutAnimation for Android
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental &&
@@ -84,6 +105,7 @@ export default function OwnerRegistrationScreen() {
   const geocodeTimerRef = useRef(null);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [selectedPlaceName, setSelectedPlaceName] = useState("");
+  const [mapType, setMapType] = useState("standard");
 
   useEffect(() => {
     setSelectedFacilities([]);
@@ -207,10 +229,8 @@ export default function OwnerRegistrationScreen() {
     if (!email || email.length === 0) {
       return "Email is required";
     }
-    // Email must start with a letter, followed by alphanumeric, '.', '_', or '-'
-    // and must end with @gmail.com, disallowing emojis and other special characters at the start
     if (!/^[a-zA-Z][a-zA-Z0-9._-]*@gmail\.com$/.test(email)) {
-      return "Email must start with a letter, contain only letters, numbers, '.', '_', or '-' before '@', and end with @gmail.com";
+      return "Invalid email";
     }
     return "";
   };
@@ -219,21 +239,11 @@ export default function OwnerRegistrationScreen() {
     if (!phone || phone.length === 0) {
       return "Phone number is required";
     }
-    if (!/^\d{10}$/.test(phone)) {
-      return "Phone number must be exactly 10 digits";
-    }
-    // Phone number should not start with 1, 2, 3, 4, or 5
-    if (!/^[6-9]/.test(phone)) {
-      return "Phone number cannot start with 1, 2, 3, 4, or 5";
-    }
-    // Phone number should not be all zeros
-    if (phone === "0000000000") {
-      return "Phone number cannot be all zeros";
-    }
-    // Phone number should not accept all zeros after the first digit
-    if (phone.length === 10 && phone.substring(1) === "000000000") {
-      return "Phone number cannot have all zeros after the first digit";
-    }
+    if (!/^\d{10}$/.test(phone)) return "Invalid phone number";
+    if (!/^[6-9]/.test(phone)) return "Invalid phone number";
+    if (phone === "0000000000") return "Invalid phone number";
+    if (phone.length === 10 && phone.substring(1) === "000000000")
+      return "Invalid phone number";
     return "";
   };
 
@@ -413,6 +423,62 @@ export default function OwnerRegistrationScreen() {
     return isValid;
   };
 
+  const onCoordinatePick = async (coord) => {
+    const region = {
+      latitude: coord.latitude,
+      longitude: coord.longitude,
+      latitudeDelta: 0.0922,
+      longitudeDelta: 0.0421,
+    };
+    setMapRegion(region);
+    try {
+      const res = await Location.reverseGeocodeAsync({
+        latitude: coord.latitude,
+        longitude: coord.longitude,
+      });
+      if (Array.isArray(res) && res[0]) {
+        const p = res[0];
+        const line = [p.name, p.street, p.city, p.region, p.postalCode, p.country]
+          .filter(Boolean)
+          .join(", ");
+        setSelectedPlaceName(line);
+        setForm({ ...form, location: line });
+      } else {
+        setSelectedPlaceName("Dropped pin");
+      }
+    } catch {
+      setSelectedPlaceName("Dropped pin");
+    }
+  };
+
+  const openInGoogleMaps = () => {
+    const q = mapRegion
+      ? `${mapRegion.latitude},${mapRegion.longitude}`
+      : (form.location || "").trim();
+    if (!q) return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      q,
+    )}`;
+    Linking.openURL(url).catch(() => {});
+  };
+
+  const zoomIn = () => {
+    if (!mapRegion) return;
+    setMapRegion({
+      ...mapRegion,
+      latitudeDelta: Math.max(mapRegion.latitudeDelta / 1.5, 0.001),
+      longitudeDelta: Math.max(mapRegion.longitudeDelta / 1.5, 0.001),
+    });
+  };
+  const zoomOut = () => {
+    if (!mapRegion) return;
+    setMapRegion({
+      ...mapRegion,
+      latitudeDelta: Math.min(mapRegion.latitudeDelta * 1.5, 80),
+      longitudeDelta: Math.min(mapRegion.longitudeDelta * 1.5, 80),
+    });
+  };
+
   const pickDoc = async (key) => {
     const res = await DocumentPicker.getDocumentAsync({});
     if (!res.canceled) {
@@ -570,11 +636,7 @@ export default function OwnerRegistrationScreen() {
     <SafeAreaView style={{ flex: 1 }} edges={["left", "right", "bottom"]}>
       <StatusBar hidden />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={0}
-        >
+        <View style={{ flex: 1 }}>
           <View style={styles.page}>
             <View style={styles.card}>
               <Text style={styles.title}>
@@ -585,11 +647,17 @@ export default function OwnerRegistrationScreen() {
                 }
               </Text>
 
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: 120 }}
+              <KeyboardAvoidingView
+                style={{ flex: 1 }}
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                keyboardVerticalOffset={0}
               >
+                <ScrollView
+                  style={{ flex: 1 }}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={{ paddingBottom: 10}}
+                >
                 {/* STEP INDICATOR */}
                 <View style={styles.stepWrap}>
                   {[1, 2, 3].map((i) => (
@@ -938,18 +1006,7 @@ export default function OwnerRegistrationScreen() {
                               });
                             }}
                           />
-                          <TouchableOpacity
-                            onPress={() => {
-                              if (form.location.trim()) {
-                                Linking.openURL(
-                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                                    form.location.trim()
-                                  )}`
-                                );
-                              }
-                            }}
-                            style={{ padding: 8 }}
-                          >
+                          <TouchableOpacity onPress={openInGoogleMaps} style={{ padding: 8 }}>
                             <MaterialIcons name="map" size={24} color="gray" />
                           </TouchableOpacity>
                         </View>
@@ -958,6 +1015,12 @@ export default function OwnerRegistrationScreen() {
                             {errors.location}
                           </Text>
                         ) : null}
+                        <TouchableOpacity
+                          style={[styles.mapActionBtn, { marginTop: 6, alignSelf: "flex-start" }]}
+                          onPress={openInGoogleMaps}
+                        >
+                          <Text style={styles.mapActionText}>Open in Google Maps</Text>
+                        </TouchableOpacity>
                         {Platform.OS === "android" && locationSuggestions.length > 0 && (
                           <View style={{ marginBottom: 10 }}>
                             {locationSuggestions.slice(0, 5).map((item, idx) => (
@@ -989,9 +1052,47 @@ export default function OwnerRegistrationScreen() {
                         )}
 
                         {mapRegion && (
-                          <MapView provider={PROVIDER_GOOGLE} style={styles.map} region={mapRegion}>
-                            <Marker coordinate={mapRegion} />
-                          </MapView>
+                          <View style={styles.mapWrap}>
+                            <MapView
+                              provider={PROVIDER_GOOGLE}
+                              style={styles.map}
+                              region={mapRegion}
+                              mapType={mapType}
+                              showsUserLocation
+                              showsMyLocationButton
+                              onPress={(e) => onCoordinatePick(e.nativeEvent.coordinate)}
+                            >
+                              <Marker
+                                coordinate={mapRegion}
+                                pinColor="red"
+                                title={selectedPlaceName || form.location || "Selected location"}
+                                draggable
+                                onDragEnd={(e) => onCoordinatePick(e.nativeEvent.coordinate)}
+                              />
+                            </MapView>
+                            <View style={styles.mapControls}>
+                              <TouchableOpacity style={styles.zoomBtn} onPress={zoomIn}>
+                                <Text style={styles.zoomText}>+</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.zoomBtn, { marginTop: 6 }]} onPress={zoomOut}>
+                                <Text style={styles.zoomText}>-</Text>
+                              </TouchableOpacity>
+                              <View style={styles.mapToggleWrap}>
+                                <TouchableOpacity
+                                  style={[styles.mapToggleBtn, mapType === "standard" && styles.mapToggleActive]}
+                                  onPress={() => setMapType("standard")}
+                                >
+                                  <Text style={[styles.mapToggleText, mapType === "standard" && styles.mapToggleTextActive]}>Map</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[styles.mapToggleBtn, mapType === "satellite" && styles.mapToggleActive, { marginLeft: 6 }]}
+                                  onPress={() => setMapType("satellite")}
+                                >
+                                  <Text style={[styles.mapToggleText, mapType === "satellite" && styles.mapToggleTextActive]}>Sat</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
                         )}
                         {mapRegion && (
                           <View style={{ flexDirection: "row", marginTop: 8, marginBottom: 10 }}>
@@ -1219,18 +1320,7 @@ export default function OwnerRegistrationScreen() {
                               });
                             }}
                           />
-                          <TouchableOpacity
-                            onPress={() => {
-                              if (form.location.trim()) {
-                                Linking.openURL(
-                                  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                                    form.location.trim()
-                                  )}`
-                                );
-                              }
-                            }}
-                            style={{ padding: 8 }}
-                          >
+                          <TouchableOpacity onPress={openInGoogleMaps} style={{ padding: 8 }}>
                             <MaterialIcons name="map" size={24} color="gray" />
                           </TouchableOpacity>
                         </View>
@@ -1239,6 +1329,7 @@ export default function OwnerRegistrationScreen() {
                             {errors.location}
                           </Text>
                         ) : null}
+                        
                         {Platform.OS === "android" && locationSuggestions.length > 0 && (
                           <View style={{ marginBottom: 10 }}>
                             {locationSuggestions.slice(0, 5).map((item, idx) => (
@@ -1270,9 +1361,47 @@ export default function OwnerRegistrationScreen() {
                         )}
 
                         {mapRegion && (
-                          <MapView provider={PROVIDER_GOOGLE} style={styles.map} region={mapRegion}>
-                            <Marker coordinate={mapRegion} />
-                          </MapView>
+                          <View style={styles.mapWrap}>
+                            <MapView
+                              provider={PROVIDER_GOOGLE}
+                              style={styles.map}
+                              region={mapRegion}
+                              mapType={mapType}
+                              showsUserLocation
+                              showsMyLocationButton
+                              onPress={(e) => onCoordinatePick(e.nativeEvent.coordinate)}
+                            >
+                              <Marker
+                                coordinate={mapRegion}
+                                pinColor="red"
+                                title={selectedPlaceName || form.location || "Selected location"}
+                                draggable
+                                onDragEnd={(e) => onCoordinatePick(e.nativeEvent.coordinate)}
+                              />
+                            </MapView>
+                            <View style={styles.mapControls}>
+                              <TouchableOpacity style={styles.zoomBtn} onPress={zoomIn}>
+                                <Text style={styles.zoomText}>+</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.zoomBtn, { marginTop: 6 }]} onPress={zoomOut}>
+                                <Text style={styles.zoomText}>-</Text>
+                              </TouchableOpacity>
+                              <View style={styles.mapToggleWrap}>
+                                <TouchableOpacity
+                                  style={[styles.mapToggleBtn, mapType === "standard" && styles.mapToggleActive]}
+                                  onPress={() => setMapType("standard")}
+                                >
+                                  <Text style={[styles.mapToggleText, mapType === "standard" && styles.mapToggleTextActive]}>Map</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[styles.mapToggleBtn, mapType === "satellite" && styles.mapToggleActive, { marginLeft: 6 }]}
+                                  onPress={() => setMapType("satellite")}
+                                >
+                                  <Text style={[styles.mapToggleText, mapType === "satellite" && styles.mapToggleTextActive]}>Sat</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
                         )}
                         {mapRegion && (
                           <View style={{ flexDirection: "row", marginTop: 8, marginBottom: 10 }}>
@@ -1542,6 +1671,12 @@ export default function OwnerRegistrationScreen() {
                             {errors.location}
                           </Text>
                         ) : null}
+                        <TouchableOpacity
+                          style={[styles.mapActionBtn, { marginTop: 6, alignSelf: "flex-start" }]}
+                          onPress={openInGoogleMaps}
+                        >
+                          <Text style={styles.mapActionText}>Open in Google Maps</Text>
+                        </TouchableOpacity>
                         {Platform.OS === "android" && locationSuggestions.length > 0 && (
                           <View style={{ marginBottom: 10 }}>
                             {locationSuggestions.slice(0, 5).map((item, idx) => (
@@ -1573,9 +1708,47 @@ export default function OwnerRegistrationScreen() {
                         )}
 
                         {mapRegion && (
-                          <MapView provider={PROVIDER_GOOGLE} style={styles.map} region={mapRegion}>
-                            <Marker coordinate={mapRegion} />
-                          </MapView>
+                          <View style={styles.mapWrap}>
+                            <MapView
+                              provider={PROVIDER_GOOGLE}
+                              style={styles.map}
+                              region={mapRegion}
+                              mapType={mapType}
+                              showsUserLocation
+                              showsMyLocationButton
+                              onPress={(e) => onCoordinatePick(e.nativeEvent.coordinate)}
+                            >
+                              <Marker
+                                coordinate={mapRegion}
+                                pinColor="red"
+                                title={selectedPlaceName || form.location || "Selected location"}
+                                draggable
+                                onDragEnd={(e) => onCoordinatePick(e.nativeEvent.coordinate)}
+                              />
+                            </MapView>
+                            <View style={styles.mapControls}>
+                              <TouchableOpacity style={styles.zoomBtn} onPress={zoomIn}>
+                                <Text style={styles.zoomText}>+</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.zoomBtn, { marginTop: 6 }]} onPress={zoomOut}>
+                                <Text style={styles.zoomText}>-</Text>
+                              </TouchableOpacity>
+                              <View style={styles.mapToggleWrap}>
+                                <TouchableOpacity
+                                  style={[styles.mapToggleBtn, mapType === "standard" && styles.mapToggleActive]}
+                                  onPress={() => setMapType("standard")}
+                                >
+                                  <Text style={[styles.mapToggleText, mapType === "standard" && styles.mapToggleTextActive]}>Map</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[styles.mapToggleBtn, mapType === "satellite" && styles.mapToggleActive, { marginLeft: 6 }]}
+                                  onPress={() => setMapType("satellite")}
+                                >
+                                  <Text style={[styles.mapToggleText, mapType === "satellite" && styles.mapToggleTextActive]}>Sat</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          </View>
                         )}
                         {mapRegion && (
                           <View style={{ flexDirection: "row", marginTop: 8, marginBottom: 10 }}>
@@ -1972,47 +2145,46 @@ export default function OwnerRegistrationScreen() {
 
                 {/* ---------- STEP 3 ---------- */}
                 {step === 3 && <Step3 form={form} />}
-              </ScrollView>
 
-              {/* BUTTONS */}
-              <View style={styles.actionBar}>
-                {step > 1 && (
-                  <TouchableOpacity
-                    style={[styles.btn, { flex: 1, marginRight: 8 }]}
-                    onPress={() => setStep(step - 1)}
-                  >
-                    <Text style={{ color: "#fff" }}>Back</Text>
-                  </TouchableOpacity>
-                )}
-                {step < 3 ? (
-                  <TouchableOpacity
-                    style={[
-                      styles.btn,
-                      { flex: 1 },
-                      ((step === 1 && !validateStep1()) ||
-                        (step === 2 && !validateStep2())) &&
-                        styles.btnDisabled,
-                    ]}
-                    onPress={next}
-                    disabled={
-                      (step === 1 && !validateStep1()) ||
-                      (step === 2 && !validateStep2())
-                    }
-                  >
-                    <Text style={{ color: "#fff" }}>Next</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.btn, { flex: 1 }]}
-                    onPress={submit}
-                  >
-                    <Text style={{ color: "#fff" }}>Submit</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
+                {/* ACTION BAR BELOW LAST FIELD */}
+                <View style={styles.actionBar}>
+                  {step > 1 && (
+                    <TouchableOpacity
+                      style={[styles.btn, { flex: 1, marginRight: 8 }]}
+                      onPress={() => setStep(step - 1)}
+                    >
+                      <Text style={{ color: "#fff" }}>Back</Text>
+                    </TouchableOpacity>
+                  )}
+                  {step < 3 ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.btn,
+                        { flex: 1 },
+                        ((step === 1 && !validateStep1()) ||
+                          (step === 2 && !validateStep2())) && styles.btnDisabled,
+                      ]}
+                      onPress={next}
+                      disabled={
+                        (step === 1 && !validateStep1()) ||
+                        (step === 2 && !validateStep2())
+                      }
+                    >
+                      <Text style={{ color: "#fff" }}>Next</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={[styles.btn, { flex: 1 }]} onPress={submit}>
+                      <Text style={{ color: "#fff" }}>Submit</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                </ScrollView>
+              </KeyboardAvoidingView>
+
+              
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </TouchableWithoutFeedback>
     </SafeAreaView>
   );
@@ -3292,15 +3464,12 @@ const styles = StyleSheet.create({
   //   zIndex: 1,
   // },
   actionBar: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    bottom: 0,
     flexDirection: "row",
     justifyContent: "space-between",
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 10,
+    marginTop: 16,
     elevation: 6,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
@@ -3483,4 +3652,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#000",
   },
+  mapWrap: { position: "relative" },
+  mapControls: { position: "absolute", right: 8, top: 8, alignItems: "center" },
+  zoomBtn: {
+    backgroundColor: "#fff",
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  zoomText: { color: "#111827", fontSize: 20, fontWeight: "700" },
+  mapToggleWrap: { marginTop: 6, flexDirection: "row" },
+  mapToggleBtn: {
+    backgroundColor: "#fff",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  mapToggleActive: { backgroundColor: "#2F80ED22", borderColor: "#2F80ED" },
+  mapToggleText: { color: "#374151", fontWeight: "700", fontSize: 12 },
+  mapToggleTextActive: { color: "#2F80ED" },
 });
